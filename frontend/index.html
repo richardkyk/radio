@@ -1,0 +1,49 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Audio Recorder</title>
+  </head>
+  <body>
+    <button id="start">Start Recording</button>
+    <button id="stop">Stop Recording</button>
+
+    <script>
+      let mediaRecorder;
+      let socket;
+
+      document.getElementById("start").onclick = async () => {
+        console.log("starting");
+        socket = new WebSocket("wss://test.com/api/stream");
+
+        socket.onopen = async () => {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+          });
+          const options = { mimeType: "audio/webm;codecs=opus" };
+          mediaRecorder = new MediaRecorder(stream, options);
+
+          mediaRecorder.ondataavailable = (e) => {
+            if (socket.readyState === WebSocket.OPEN) {
+              e.data.arrayBuffer().then((buffer) => {
+                socket.send(buffer);
+              });
+            }
+          };
+
+          mediaRecorder.start(250); // every 250ms
+          console.log("MIME Type:", mediaRecorder.mimeType);
+        };
+      };
+
+      document.getElementById("stop").onclick = () => {
+        console.log("stopping");
+        if (mediaRecorder && mediaRecorder.state !== "inactive") {
+          mediaRecorder.stop();
+        }
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.close();
+        }
+      };
+    </script>
+  </body>
+</html>
