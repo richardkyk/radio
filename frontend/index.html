@@ -13,7 +13,7 @@
 
       document.getElementById("start").onclick = async () => {
         console.log("starting");
-        socket = new WebSocket("wss://test.com/api/stream");
+        const socket = new WebSocket(`/api/stream`.replace(/^http/, "ws"));
 
         socket.onopen = async () => {
           const stream = await navigator.mediaDevices.getUserMedia({

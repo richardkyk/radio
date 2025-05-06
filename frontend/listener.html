@@ -11,27 +11,21 @@
       audio.src = URL.createObjectURL(mediaSource);
 
       mediaSource.addEventListener("sourceopen", () => {
-        const mime = "audio/webm; codecs=opus";
+        const mime = "audio/webm;codecs=opus";
         const sourceBuffer = mediaSource.addSourceBuffer(mime);
 
-        const stream = new ReadableStream({
-          start(controller) {
-            const reader = stream.getReader();
+        console.log("playing");
 
-            fetch("https://test.com/english").then((res) => {
-              const reader = res.body.getReader();
-
-              function read() {
-                reader.read().then(({ done, value }) => {
-                  if (done) return;
-                  sourceBuffer.appendBuffer(value);
-                  read();
-                });
-              }
-
-              read();
+        fetch("/english").then((res) => {
+          const reader = res.body.getReader();
+          const pump = () =>
+            reader.read().then(({ done, value }) => {
+              if (done) return;
+              console.log("received: ", value);
+              sourceBuffer.appendBuffer(value);
+              return pump();
             });
-          },
+          return pump();
         });
       });
     </script>

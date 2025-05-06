@@ -19,16 +19,8 @@ var indexHTML string
 //go:embed frontend/listener.html
 var listenerHTML string
 
-const (
-	BUFFERSIZE = 8192
-
-	//delay = track_duration * buffer_size / aac_file_size
-	DELAY = 150
-)
-
 type Connection struct {
 	bufferChannel chan []byte
-	buffer        []byte
 }
 
 type ConnectionPool struct {
@@ -54,9 +46,10 @@ func (cp *ConnectionPool) Broadcast(buffer []byte) {
 	defer cp.mu.Unlock()
 	cp.mu.Lock()
 	for connection := range cp.ConnectionMap {
-		copy(connection.buffer, buffer)
+		bufCopy := make([]byte, len(buffer))
+		copy(bufCopy, buffer)
 		select {
-		case connection.bufferChannel <- connection.buffer:
+		case connection.bufferChannel <- bufCopy:
 		default:
 		}
 	}
@@ -74,7 +67,7 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	connection := &Connection{bufferChannel: make(chan []byte, BUFFERSIZE)} // buffered channel to avoid blocking
+	connection := &Connection{bufferChannel: make(chan []byte, 10)} // buffered channel to avoid blocking
 	Pool.AddConnection(connection)
 	defer Pool.DeleteConnection(connection)
 	log.Printf("%s has connected to the audio stream\n", r.RemoteAddr)
@@ -90,6 +83,7 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Write error: %v", err)
 			break
 		}
+		log.Printf("Sent %d bytes\n", len(buf))
 		flusher.Flush()
 	}
 	log.Printf("%s's connection to the audio stream has been closed\n", r.RemoteAddr)
@@ -139,10 +133,9 @@ func (wsh webSocketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			log.Println("Read error:", err)
 			break
 		}
-		log.Printf("Received %d bytes\n", len(data))
-		_, err = file.Write(data)
-
+		log.Printf("Received %d bytes\n", len(data)) // TODO: handle errors
 		Pool.Broadcast(data)
+		_, err = file.Write(data)
 	}
 }
 
