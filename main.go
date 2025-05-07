@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"slices"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/pion/rtp"
@@ -54,6 +56,7 @@ func handleSpeakerWS(w http.ResponseWriter, r *http.Request) {
 		log.Println("Peer connection error:", err)
 		return
 	}
+	defer pc.Close()
 
 	// On ICE candidate, send it to the client via WS
 	pc.OnICECandidate(func(c *webrtc.ICECandidate) {
@@ -140,6 +143,7 @@ func handleListenerWS(w http.ResponseWriter, r *http.Request) {
 		log.Println("Peer connection creation failed:", err)
 		return
 	}
+	defer pc.Close()
 
 	// On ICE candidate, send it to the client via WebSocket
 	pc.OnICECandidate(func(c *webrtc.ICECandidate) {
@@ -168,6 +172,16 @@ func handleListenerWS(w http.ResponseWriter, r *http.Request) {
 		log.Println("Failed to add audio track to listener:", err)
 		return
 	}
+	// Defer a function to remove the track when the connection closes
+	defer func() {
+		// Remove the track from the listenerTracks slice
+		for i, track := range listenerTracks {
+			if track == audioTrack {
+				listenerTracks = slices.Delete(listenerTracks, i, i+1)
+				break
+			}
+		}
+	}()
 
 	// Process WebSocket messages from the listener
 	for {
@@ -252,7 +266,7 @@ func createPeerConnection() (*webrtc.PeerConnection, error) {
 
 // Relay audio from the speaker to all listeners
 func relayAudioToListeners(remote *webrtc.TrackRemote) {
-	buffer := make([]byte, 1500)
+	buffer := make([]byte, 500)
 	for {
 		// Read audio data from the speaker's track
 		n, _, err := remote.Read(buffer)
@@ -269,12 +283,15 @@ func relayAudioToListeners(remote *webrtc.TrackRemote) {
 		}
 
 		// Relay the audio packet to all listeners
+		start := time.Now()
 		listenerMu.Lock()
 		for _, track := range listenerTracks {
 			// Write the RTP packet to the listener's track
 			_ = track.WriteRTP(packet)
 		}
 		listenerMu.Unlock()
+		elapsed := time.Since(start)
+		log.Printf("Relayed %d bytes to %d listeners (%s)\n", n, len(listenerTracks), elapsed)
 	}
 }
 
