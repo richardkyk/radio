@@ -18,11 +18,7 @@
         stopListening();
 
         pc = new RTCPeerConnection({
-          iceServers: [
-            {
-              urls: ["stun:stun.l.google.com:19302"],
-            },
-          ],
+          iceServers: [],
         });
 
         ws = new WebSocket("/ws/listener".replace(/^http/, "ws"));

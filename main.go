@@ -243,11 +243,7 @@ func createPeerConnection() (*webrtc.PeerConnection, error) {
 	api := webrtc.NewAPI(webrtc.WithMediaEngine(&m))
 
 	peerConnection, err := api.NewPeerConnection(webrtc.Configuration{
-		ICEServers: []webrtc.ICEServer{
-			{
-				URLs: []string{"stun:stun.l.google.com:19302"},
-			},
-		},
+		ICEServers: []webrtc.ICEServer{},
 	})
 	if err != nil {
 		return nil, err
