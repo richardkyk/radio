@@ -22,9 +22,21 @@ var (
 	listenerHTML string
 
 	// Slice to keep track of listener connections and audio tracks
-	listenerTracks []*webrtc.TrackLocalStaticRTP
-	listenerMu     sync.Mutex
+	listeners  []Listener
+	speakers   []Speaker
+	listenerMu sync.Mutex
 )
+
+type Listener struct {
+	topic  string
+	socket *websocket.Conn
+	track  *webrtc.TrackLocalStaticRTP
+}
+
+type Speaker struct {
+	topic  string
+	socket *websocket.Conn
+}
 
 type Signal struct {
 	Type string          `json:"type"`
@@ -51,12 +63,37 @@ func handleSpeakerWS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
+	speaker := Speaker{
+		topic:  "english",
+		socket: conn,
+	}
+
 	pc, err := createPeerConnection()
 	if err != nil {
 		log.Println("Peer connection error:", err)
 		return
 	}
-	defer pc.Close()
+	defer func() {
+		// notify listeners that the speaker has disconnected
+		for _, l := range listeners {
+			if l.topic != speaker.topic {
+				continue
+			}
+
+			data := map[string]string{
+				"topic": speaker.topic,
+			}
+			dataBytes, _ := json.Marshal(data)
+			notifyListeners(speaker.topic, Signal{
+				Type: "speaker-disconnect",
+				Data: dataBytes,
+			})
+
+		}
+		// Close the peer connection
+		pc.Close()
+
+	}()
 
 	// On ICE candidate, send it to the client via WS
 	pc.OnICECandidate(func(c *webrtc.ICECandidate) {
@@ -114,6 +151,15 @@ func handleSpeakerWS(w http.ResponseWriter, r *http.Request) {
 				Data: answerJSON,
 			})
 
+			data := map[string]string{
+				"topic": speaker.topic,
+			}
+			dataBytes, _ := json.Marshal(data)
+			notifyListeners(speaker.topic, Signal{
+				Type: "speaker-connect",
+				Data: dataBytes,
+			})
+
 		case "ice":
 			var candidate webrtc.ICECandidateInit
 			if err := json.Unmarshal(msg.Data, &candidate); err != nil {
@@ -160,7 +206,12 @@ func handleListenerWS(w http.ResponseWriter, r *http.Request) {
 	// Create a track for receiving audio (or any media type)
 	// This is where the server prepares the track to receive media from the speaker.
 	audioTrack, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus}, "audio", "broadcast")
-	listenerTracks = append(listenerTracks, audioTrack)
+	listener := Listener{
+		topic:  "english",
+		socket: conn,
+		track:  audioTrack,
+	}
+	listeners = append(listeners, listener)
 	if err != nil {
 		log.Println("Failed to create audio track:", err)
 		return
@@ -175,9 +226,9 @@ func handleListenerWS(w http.ResponseWriter, r *http.Request) {
 	// Defer a function to remove the track when the connection closes
 	defer func() {
 		// Remove the track from the listenerTracks slice
-		for i, track := range listenerTracks {
-			if track == audioTrack {
-				listenerTracks = slices.Delete(listenerTracks, i, i+1)
+		for i, l := range listeners {
+			if l.track == audioTrack {
+				listeners = slices.Delete(listeners, i, i+1)
 				break
 			}
 		}
@@ -281,13 +332,22 @@ func relayAudioToListeners(remote *webrtc.TrackRemote) {
 		// Relay the audio packet to all listeners
 		start := time.Now()
 		listenerMu.Lock()
-		for _, track := range listenerTracks {
+		for _, l := range listeners {
 			// Write the RTP packet to the listener's track
-			_ = track.WriteRTP(packet)
+			_ = l.track.WriteRTP(packet)
 		}
 		listenerMu.Unlock()
 		elapsed := time.Since(start)
-		log.Printf("Relayed %d bytes to %d listeners (%s)\n", n, len(listenerTracks), elapsed)
+		log.Printf("Relayed %d bytes to %d listeners (%s)\n", n, len(listeners), elapsed)
+	}
+}
+
+func notifyListeners(topic string, payload Signal) {
+	for _, l := range listeners {
+		if l.topic != topic {
+			continue
+		}
+		l.socket.WriteJSON(payload)
 	}
 }
 

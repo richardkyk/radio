@@ -6,9 +6,12 @@
   <body>
     <audio id="audio" controls></audio>
     <script>
+      const audioElement = document.getElementById("audio");
+
       let pc = null;
       let ws = null;
       let isListening = false;
+      let stream = null;
 
       async function startListening() {
         if (isListening) return;
@@ -52,6 +55,12 @@
             );
           } else if (msg.type === "ice") {
             await pc.addIceCandidate(new RTCIceCandidate(msg.data));
+          } else if (msg.type === "speaker-connect") {
+            console.log("Speaker connected");
+            handleIncomingAudio(stream);
+          } else if (msg.type === "speaker-disconnect") {
+            console.log("Speaker disconnected");
+            audioElement.pause();
           }
         };
 
@@ -73,16 +82,19 @@
 
         pc.ontrack = (event) => {
           if (event.track.kind === "audio") {
+            stream = event.streams[0];
             console.log("Audio track received: ", event.track);
-            handleIncomingAudio(event.track);
+            handleIncomingAudio(stream);
           }
         };
       }
 
-      function handleIncomingAudio(track) {
-        // Process the incoming audio (e.g., play it in an <audio> element)
-        const audioElement = document.getElementById("audio");
-        audioElement.srcObject = new MediaStream([track]);
+      function handleIncomingAudio(stream) {
+        console.log(stream);
+        audioElement.srcObject = stream;
+        audioElement
+          .play()
+          .catch((err) => console.error("Error playing audio:", err));
       }
 
       function stopListening() {
