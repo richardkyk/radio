@@ -8,41 +8,66 @@
     <button id="stop">Stop Recording</button>
 
     <script>
-      let mediaRecorder;
-      let socket;
+      let pc;
+      let ws;
+      let stream;
+      let answerReceived = false;
+      const candidates = [];
 
-      document.getElementById("start").onclick = async () => {
-        console.log("starting");
-        const socket = new WebSocket(`/api/stream`.replace(/^http/, "ws"));
+      async function startRecording() {
+        pc = new RTCPeerConnection({
+          iceServers: [
+            {
+              urls: ["stun:stun.l.google.com:19302"],
+            },
+          ],
+        });
+        ws = new WebSocket("/ws/speaker".replace(/^http/, "ws"));
 
-        socket.onopen = async () => {
-          const stream = await navigator.mediaDevices.getUserMedia({
+        ws.onmessage = async (event) => {
+          const msg = JSON.parse(event.data);
+          if (msg.type === "answer") {
+            const answer = new RTCSessionDescription(msg.data);
+            await pc.setRemoteDescription(answer);
+            answerReceived = true;
+          } else if (msg.type === "ice") {
+            candidates.push(msg.data);
+            if (!answerReceived) return;
+            for (const candidate of candidates) {
+              await pc.addIceCandidate(new RTCIceCandidate(candidate));
+            }
+            candidates = [];
+          }
+        };
+
+        ws.onopen = async () => {
+          stream = await navigator.mediaDevices.getUserMedia({
             audio: true,
           });
-          const options = { mimeType: "audio/webm;codecs=opus" };
-          mediaRecorder = new MediaRecorder(stream, options);
+          stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
-          mediaRecorder.ondataavailable = (e) => {
-            if (socket.readyState === WebSocket.OPEN) {
-              e.data.arrayBuffer().then((buffer) => {
-                socket.send(buffer);
-              });
-            }
-          };
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
 
-          mediaRecorder.start(250); // every 250ms
-          console.log("MIME Type:", mediaRecorder.mimeType);
+          ws.send(JSON.stringify({ type: "offer", data: offer }));
         };
-      };
+
+        pc.onicecandidate = (event) => {
+          if (event.candidate) {
+            ws.send(JSON.stringify({ type: "ice", data: event.candidate }));
+          }
+        };
+      }
+
+      document.getElementById("start").onclick = startRecording;
 
       document.getElementById("stop").onclick = () => {
-        console.log("stopping");
-        if (mediaRecorder && mediaRecorder.state !== "inactive") {
-          mediaRecorder.stop();
+        if (stream) {
+          stream.getTracks().forEach((t) => t.stop());
+          stream = null;
         }
-        if (socket && socket.readyState === WebSocket.OPEN) {
-          socket.close();
-        }
+        if (ws) ws.close();
+        if (pc) pc.close();
       };
     </script>
   </body>

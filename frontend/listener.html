@@ -1,32 +1,109 @@
 <!doctype html>
 <html>
   <head>
-    <title>Listener</title>
+    <title>Audio Listener</title>
   </head>
   <body>
-    <audio id="audio" autoplay controls></audio>
+    <audio id="audio" controls></audio>
     <script>
-      const audio = document.getElementById("audio");
-      const mediaSource = new MediaSource();
-      audio.src = URL.createObjectURL(mediaSource);
+      let pc = null;
+      let ws = null;
+      let isListening = false;
 
-      mediaSource.addEventListener("sourceopen", () => {
-        const mime = "audio/webm;codecs=opus";
-        const sourceBuffer = mediaSource.addSourceBuffer(mime);
+      async function startListening() {
+        if (isListening) return;
+        isListening = true;
 
-        console.log("playing");
+        // Clean up from any previous session
+        stopListening();
 
-        fetch("/english").then((res) => {
-          const reader = res.body.getReader();
-          const pump = () =>
-            reader.read().then(({ done, value }) => {
-              if (done) return;
-              console.log("received: ", value);
-              sourceBuffer.appendBuffer(value);
-              return pump();
-            });
-          return pump();
+        pc = new RTCPeerConnection({
+          iceServers: [
+            {
+              urls: ["stun:stun.l.google.com:19302"],
+            },
+          ],
         });
+
+        ws = new WebSocket("/ws/listener".replace(/^http/, "ws"));
+
+        ws.onopen = async () => {
+          console.log("WebSocket connected");
+
+          // Send a request to start listening (could be "offer" if needed)
+          ws.send(
+            JSON.stringify({
+              type: "listen",
+              data: {},
+            }),
+          );
+        };
+
+        ws.onmessage = async (event) => {
+          const msg = JSON.parse(event.data);
+          if (msg.type === "offer") {
+            const offer = new RTCSessionDescription(msg.data);
+            await pc.setRemoteDescription(offer);
+
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+
+            ws.send(
+              JSON.stringify({
+                type: "answer",
+                data: answer,
+              }),
+            );
+          } else if (msg.type === "ice") {
+            await pc.addIceCandidate(new RTCIceCandidate(msg.data));
+          }
+        };
+
+        ws.onerror = (err) => {
+          console.error("WebSocket error:", err);
+          ws.close();
+        };
+
+        pc.onicecandidate = (event) => {
+          if (event.candidate && ws?.readyState === WebSocket.OPEN) {
+            ws.send(
+              JSON.stringify({
+                type: "ice",
+                data: event.candidate,
+              }),
+            );
+          }
+        };
+
+        pc.ontrack = (event) => {
+          if (event.track.kind === "audio") {
+            console.log("Audio track received: ", event.track);
+            handleIncomingAudio(event.track);
+          }
+        };
+      }
+
+      function handleIncomingAudio(track) {
+        // Process the incoming audio (e.g., play it in an <audio> element)
+        const audioElement = document.getElementById("audio");
+        audioElement.srcObject = new MediaStream([track]);
+      }
+
+      function stopListening() {
+        if (pc) {
+          pc.close();
+          pc = null;
+        }
+
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.close();
+        }
+        ws = null;
+        isListening = false;
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        startListening();
       });
     </script>
   </body>
