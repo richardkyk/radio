@@ -11,7 +11,7 @@ import { LANGUAGES, STATUSES } from '@/lib/constants'
 import { cn } from '@/lib/utils'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
-import { FaChevronLeft, FaExclamationCircle } from 'react-icons/fa'
+import { FaChevronLeft } from 'react-icons/fa'
 import { FaMicrophone } from 'react-icons/fa6'
 import { toast } from 'sonner'
 
@@ -49,8 +49,14 @@ function RouteComponent() {
       answerReceivedRef.current = false
       setIsBroadcasting(false)
     } else {
+      if (!webSocketRef.current) {
+        toast.error('Connection error', {
+          description: 'Please refresh the page and try again',
+        })
+        setStatus('offline')
+        return
+      }
       console.log('starting')
-      if (!webSocketRef.current) return
       setIsBroadcasting(true)
       try {
         webSocketRef.current?.send(
@@ -142,6 +148,7 @@ function RouteComponent() {
       setStatus('online')
     }
     ws.onerror = (event) => {
+      if (event.target !== webSocketRef.current) return
       console.log('websocket error', event)
       webSocketRef.current = null
       answerReceivedRef.current = false
@@ -152,12 +159,12 @@ function RouteComponent() {
     }
     return () => {
       console.log('websocket stop')
+      webSocketRef.current = null
       setStatus('idle')
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'speaker-disconnected' }))
       }
       ws.close()
-      webSocketRef.current = null
     }
   }, [language])
 
