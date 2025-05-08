@@ -135,18 +135,23 @@ function RouteComponent() {
     ws.onopen = async () => {
       ws.send(JSON.stringify({ type: 'speaker-connected' }))
     }
-    ws.onclose = () => {
-      ws.send(JSON.stringify({ type: 'speaker-disconnected' }))
+    return () => {
+      console.log('websocket stop')
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'speaker-disconnected' }))
+      }
+      ws.close()
+      webSocketRef.current = null
     }
   }, [language])
 
   return (
-    <main className="flex min-h-screen flex-col p-4 bg-gray-50">
+    <main className="flex min-h-[calc(100vh-2.5rem)] flex-col p-4 bg-gray-50">
       <div className="w-full max-w-md mx-auto space-y-4">
         <div className="flex items-center mb-4">
           <Link to="/speaker">
             <Button variant="ghost" size="icon" className="mr-2">
-              <FaChevronLeft className="h-5 w-5" />
+              <FaChevronLeft className="size-5" />
             </Button>
           </Link>
           <h1 className="text-xl font-bold">{languageName} Room</h1>

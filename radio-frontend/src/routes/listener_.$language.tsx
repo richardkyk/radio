@@ -66,7 +66,7 @@ function RouteComponent() {
   }, [isListening, speakers])
 
   return (
-    <div className="flex min-h-screen flex-col p-4 bg-gray-50">
+    <main className="flex min-h-[calc(100vh-2.5rem)] flex-col p-4 bg-gray-50">
       <div className="w-full max-w-md mx-auto space-y-4">
         <div className="flex items-center mb-4">
           <Link to="/listener">
@@ -143,6 +143,6 @@ function RouteComponent() {
             : 'Adjust your volume for comfortable listening.'}
         </div>
       </div>
-    </div>
+    </main>
   )
 }

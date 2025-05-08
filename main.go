@@ -86,7 +86,13 @@ func handleSpeakerWS(w http.ResponseWriter, r *http.Request) {
 
 		}
 		// Close the peer connection
-		pc.Close()
+		if pc != nil {
+			err := pc.Close()
+			if err != nil {
+				log.Println("Error closing peer connection:", err)
+			}
+		}
+		pc = nil
 
 	}
 	defer handleClose()
@@ -94,6 +100,10 @@ func handleSpeakerWS(w http.ResponseWriter, r *http.Request) {
 	for {
 		var msg Signal
 		if err := conn.ReadJSON(&msg); err != nil {
+			if err == io.ErrClosedPipe {
+				log.Println("Listener disconnected")
+				break
+			}
 			log.Println("WS read error:", err)
 			break
 		}

@@ -14,11 +14,16 @@ export const Route = createFileRoute('/')({
 
 function App() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-4 bg-gray-50">
-      <div className="w-full max-w-md space-y-4">
-        <p className="text-center text-gray-500">
-          Choose your role to continue
-        </p>
+    <main className="flex min-h-[calc(100vh-2.5rem)] flex-col p-4 bg-gray-50">
+      <div className="w-full max-w-md mx-auto space-y-4">
+        <div className="flex items-center mb-4">
+          <div className="h-9"></div>
+          <h1 className="text-xl font-bold">Role Selection</h1>
+        </div>
+
+        <div className="w-full max-w-md mx-auto space-y-4">
+          <p className="text-gray-500 mb-6">Choose your role to continue</p>
+        </div>
 
         <div className="grid grid-cols-1 gap-4 mt-8">
           <Link to="/speaker" className="w-full">
