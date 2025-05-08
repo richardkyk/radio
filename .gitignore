@@ -4,3 +4,9 @@ output
 *.pem
 *.aac
 .DS_Store
+.cert
+
+node_modules
+dist
+dist-ssr
+*.local

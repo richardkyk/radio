@@ -1,0 +1,204 @@
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import { LANGUAGES } from '@/lib/constants'
+import { cn } from '@/lib/utils'
+import { createFileRoute, Link } from '@tanstack/react-router'
+import { useEffect, useRef, useState } from 'react'
+import { FaChevronLeft } from 'react-icons/fa'
+import { FaMicrophone } from 'react-icons/fa6'
+
+export const Route = createFileRoute('/speaker_/$language')({
+  component: RouteComponent,
+})
+
+function RouteComponent() {
+  const { language } = Route.useParams()
+  const languageName = LANGUAGES.find((l) => l.code === language)?.name
+
+  const [isBroadcasting, setIsBroadcasting] = useState(false)
+  const [stream, setStream] = useState<MediaStream | null>(null)
+
+  const webSocketRef = useRef<WebSocket | null>(null)
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null)
+  const answerReceivedRef = useRef(false)
+  const iceCandidatesRef = useRef<RTCIceCandidateInit[]>([])
+  const analyserRef = useRef<number | null>(null)
+
+  // Handle microphone access
+  const toggleBroadcast = async () => {
+    if (isBroadcasting) {
+      console.log('stopping')
+      // Stop recording
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop())
+        setStream(null)
+      }
+      peerConnectionRef.current?.close()
+      peerConnectionRef.current = null
+      clearInterval(analyserRef.current as number)
+      webSocketRef.current?.send(JSON.stringify({ type: 'broadcast-stopped' }))
+      answerReceivedRef.current = false
+      setIsBroadcasting(false)
+    } else {
+      console.log('starting')
+      setIsBroadcasting(true)
+      webSocketRef.current?.send(JSON.stringify({ type: 'broadcast-started' }))
+      try {
+        const pc = new RTCPeerConnection({
+          iceServers: [],
+        })
+        peerConnectionRef.current = pc
+        pc.onicecandidate = (event) => {
+          console.log(event)
+          if (event.candidate) {
+            webSocketRef.current?.send(
+              JSON.stringify({ type: 'ice', data: event.candidate }),
+            )
+          }
+        }
+        // Start recording
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        })
+        stream.getTracks().forEach((track) => pc.addTrack(track, stream))
+        setStream(stream)
+
+        const audioContext = new AudioContext()
+        const source = audioContext.createMediaStreamSource(stream)
+        const analyser = audioContext.createAnalyser()
+        analyser.fftSize = 256
+
+        source.connect(analyser)
+        const dataArray = new Uint8Array(analyser.frequencyBinCount)
+
+        function checkAudioActivity() {
+          analyser.getByteTimeDomainData(dataArray)
+          const max = Math.max(...dataArray)
+          const min = Math.min(...dataArray)
+          const delta = max - min
+
+          if (delta > 5) {
+            console.log('🎙️ Audio activity detected')
+          } else {
+            console.log('🔇 Silence')
+          }
+        }
+
+        // Check periodically
+        analyserRef.current = setInterval(checkAudioActivity, 500)
+
+        const offer = await pc.createOffer()
+        await pc.setLocalDescription(offer)
+
+        webSocketRef.current?.send(
+          JSON.stringify({ type: 'offer', data: offer }),
+        )
+      } catch (error) {
+        console.error('Error accessing microphone:', error)
+        setIsBroadcasting(false)
+      }
+    }
+  }
+
+  // handle websocket
+  useEffect(() => {
+    console.log('websocket start')
+    if (webSocketRef.current) return
+    const wsUrl = new URL(`wss://localhost/ws/speaker?topic=${language}`)
+    const ws = new WebSocket(wsUrl)
+    webSocketRef.current = ws
+
+    ws.onmessage = async (event) => {
+      const msg = JSON.parse(event.data)
+      if (msg.type === 'answer') {
+        const answer = new RTCSessionDescription(msg.data)
+        await peerConnectionRef.current?.setRemoteDescription(answer)
+        answerReceivedRef.current = true
+      } else if (msg.type === 'ice') {
+        iceCandidatesRef.current.push(msg.data)
+        if (!answerReceivedRef.current) return
+        for (const candidate of iceCandidatesRef.current) {
+          await peerConnectionRef.current?.addIceCandidate(
+            new RTCIceCandidate(candidate),
+          )
+        }
+        iceCandidatesRef.current = []
+      }
+    }
+    ws.onopen = async () => {
+      ws.send(JSON.stringify({ type: 'speaker-connected' }))
+    }
+    ws.onclose = () => {
+      ws.send(JSON.stringify({ type: 'speaker-disconnected' }))
+    }
+  }, [language])
+
+  return (
+    <main className="flex min-h-screen flex-col p-4 bg-gray-50">
+      <div className="w-full max-w-md mx-auto space-y-4">
+        <div className="flex items-center mb-4">
+          <Link to="/speaker">
+            <Button variant="ghost" size="icon" className="mr-2">
+              <FaChevronLeft className="h-5 w-5" />
+            </Button>
+          </Link>
+          <h1 className="text-xl font-bold">{languageName} Room</h1>
+        </div>
+
+        <Card className="mb-6">
+          <CardHeader>
+            <div className="flex justify-between items-center">
+              <CardTitle>Speaking Room</CardTitle>
+              <Badge variant="outline">1 listening</Badge>
+            </div>
+            <CardDescription>
+              Speak clearly into your microphone. Your voice will be transmitted
+              to all listeners.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col items-center">
+            <div
+              className={`p-8 rounded-full mb-4 transition-colors ${isBroadcasting ? 'bg-red-100' : 'bg-gray-100'}`}
+            >
+              <Button
+                variant={isBroadcasting ? 'destructive' : 'default'}
+                size="icon"
+                className={cn(
+                  'h-16 w-16 rounded-full',
+                  isBroadcasting && 'pulse',
+                )}
+                onClick={toggleBroadcast}
+              >
+                {isBroadcasting ? (
+                  <FaMicrophone className="size-8" />
+                ) : (
+                  <FaMicrophone className="size-8" />
+                )}
+              </Button>
+            </div>
+            <div className="text-center">
+              {isBroadcasting ? (
+                <div className="text-red-500 font-medium">
+                  Broadcasting... Tap to stop
+                </div>
+              ) : (
+                <div className="text-gray-500">Tap to start speaking</div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="text-sm text-gray-500 text-center">
+          Remember to speak clearly and at a moderate pace for the best results.
+        </div>
+      </div>
+    </main>
+  )
+}

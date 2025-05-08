@@ -53,7 +53,9 @@ func listenerFrontendHander(w http.ResponseWriter, r *http.Request) {
 
 // Handle offer from the speaker
 func handleSpeakerWS(w http.ResponseWriter, r *http.Request) {
-	upgrader := websocket.Upgrader{}
+	upgrader := websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool { return true },
+	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println("WebSocket upgrade failed:", err)
@@ -65,12 +67,8 @@ func handleSpeakerWS(w http.ResponseWriter, r *http.Request) {
 		topic: "english",
 	}
 
-	pc, err := createPeerConnection()
-	if err != nil {
-		log.Println("Peer connection error:", err)
-		return
-	}
-	defer func() {
+	var pc *webrtc.PeerConnection
+	handleClose := func() {
 		// notify listeners that the speaker has disconnected
 		for _, l := range listeners {
 			if l.topic != speaker.topic {
@@ -90,26 +88,8 @@ func handleSpeakerWS(w http.ResponseWriter, r *http.Request) {
 		// Close the peer connection
 		pc.Close()
 
-	}()
-
-	// On ICE candidate, send it to the client via WS
-	pc.OnICECandidate(func(c *webrtc.ICECandidate) {
-		if c == nil {
-			return
-		}
-		candidateJSON, _ := json.Marshal(c.ToJSON())
-		conn.WriteJSON(Signal{
-			Type: "ice",
-			Data: candidateJSON,
-		})
-	})
-
-	// On audio track, relay to listeners
-	pc.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
-		if track.Kind() == webrtc.RTPCodecTypeAudio {
-			go relayAudioToListeners(track, speaker.topic)
-		}
-	})
+	}
+	defer handleClose()
 
 	for {
 		var msg Signal
@@ -119,6 +99,32 @@ func handleSpeakerWS(w http.ResponseWriter, r *http.Request) {
 		}
 
 		switch msg.Type {
+		case "broadcast-started":
+			pc, err = createPeerConnection()
+			if err != nil {
+				log.Println("Peer connection error:", err)
+				return
+			}
+
+			// On ICE candidate, send it to the client via WS
+			pc.OnICECandidate(func(c *webrtc.ICECandidate) {
+				if c == nil {
+					return
+				}
+				candidateJSON, _ := json.Marshal(c.ToJSON())
+				conn.WriteJSON(Signal{
+					Type: "ice",
+					Data: candidateJSON,
+				})
+			})
+
+			// On audio track, relay to listeners
+			pc.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
+				if track.Kind() == webrtc.RTPCodecTypeAudio {
+					go relayAudioToListeners(track, speaker.topic)
+				}
+			})
+
 		case "offer":
 			var offer webrtc.SessionDescription
 			if err := json.Unmarshal(msg.Data, &offer); err != nil {
@@ -164,6 +170,8 @@ func handleSpeakerWS(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			pc.AddICECandidate(candidate)
+		case "broadcast-stopped":
+			handleClose()
 		}
 	}
 }
@@ -360,5 +368,5 @@ func main() {
 	http.HandleFunc("/ws/listener", handleListenerWS)
 
 	log.Println("Listening on port 443...")
-	log.Fatal(http.ListenAndServeTLS(":443", "test.com.pem", "test.com-key.pem", nil))
+	log.Fatal(http.ListenAndServeTLS(":443", ".cert/cert.pem", ".cert/key.pem", nil))
 }

@@ -1,0 +1,15 @@
+{
+  "framework": "react",
+  "typescript": true,
+  "projectName": "radio-frontend",
+  "mode": "file-router",
+  "tailwind": true,
+  "packageManager": "pnpm",
+  "toolchain": "eslint+prettier",
+  "variableValues": {},
+  "git": true,
+  "version": 1,
+  "existingAddOns": [
+    "shadcn"
+  ]
+}
