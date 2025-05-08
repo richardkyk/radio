@@ -136,3 +136,20 @@ code {
     @apply bg-background text-foreground;
   }
 }
+
+:where([data-sonner-toaster][dir='ltr'] button[data-close-button]) {
+  --toast-close-button-start: auto;
+  --toast-close-button-end: 0;
+  --toast-close-button-transform: translate(35%, -35%);
+}
+
+:where([data-sonner-toaster][dir='rtl'] button[data-close-button]) {
+  --toast-close-button-start: 0;
+  --toast-close-button-end: auto;
+  --toast-close-button-transform: translate(-35%, -35%);
+}
+
+[data-sonner-toast][data-styled='true']:hover [data-close-button]:hover {
+  background: inherit;
+  border-color: inherit;
+}

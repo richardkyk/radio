@@ -7,12 +7,13 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import { LANGUAGES } from '@/lib/constants'
+import { LANGUAGES, STATUSES } from '@/lib/constants'
 import { cn } from '@/lib/utils'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
-import { FaChevronLeft } from 'react-icons/fa'
+import { FaChevronLeft, FaExclamationCircle } from 'react-icons/fa'
 import { FaMicrophone } from 'react-icons/fa6'
+import { toast } from 'sonner'
 
 export const Route = createFileRoute('/speaker_/$language')({
   component: RouteComponent,
@@ -24,6 +25,7 @@ function RouteComponent() {
 
   const [isBroadcasting, setIsBroadcasting] = useState(false)
   const [stream, setStream] = useState<MediaStream | null>(null)
+  const [status, setStatus] = useState<string>('idle')
 
   const webSocketRef = useRef<WebSocket | null>(null)
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null)
@@ -48,9 +50,12 @@ function RouteComponent() {
       setIsBroadcasting(false)
     } else {
       console.log('starting')
+      if (!webSocketRef.current) return
       setIsBroadcasting(true)
-      webSocketRef.current?.send(JSON.stringify({ type: 'broadcast-started' }))
       try {
+        webSocketRef.current?.send(
+          JSON.stringify({ type: 'broadcast-started' }),
+        )
         const pc = new RTCPeerConnection({
           iceServers: [],
         })
@@ -134,9 +139,20 @@ function RouteComponent() {
     }
     ws.onopen = async () => {
       ws.send(JSON.stringify({ type: 'speaker-connected' }))
+      setStatus('online')
+    }
+    ws.onerror = (event) => {
+      console.log('websocket error', event)
+      webSocketRef.current = null
+      answerReceivedRef.current = false
+      setStatus('offline')
+      toast.error('Connection error', {
+        description: 'Please refresh the page and try again',
+      })
     }
     return () => {
       console.log('websocket stop')
+      setStatus('idle')
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'speaker-disconnected' }))
       }
@@ -159,8 +175,30 @@ function RouteComponent() {
 
         <Card className="mb-6">
           <CardHeader>
-            <div className="flex justify-between items-center">
+            <div className="flex gap-2 items-center">
               <CardTitle>Speaking Room</CardTitle>
+              <Badge
+                variant="outline"
+                className="ml-auto"
+                style={{
+                  borderColor: `var(${
+                    STATUSES.find((s) => s.code === status)?.color
+                  })`,
+                  backgroundColor: `var(${
+                    STATUSES.find((s) => s.code === status)?.background
+                  })`,
+                }}
+              >
+                <div
+                  className={cn('size-2 rounded-full')}
+                  style={{
+                    backgroundColor: `var(${
+                      STATUSES.find((s) => s.code === status)?.color
+                    })`,
+                  }}
+                ></div>
+                {STATUSES.find((s) => s.code === status)?.name}
+              </Badge>
               <Badge variant="outline">1 listening</Badge>
             </div>
             <CardDescription>
@@ -170,17 +208,20 @@ function RouteComponent() {
           </CardHeader>
           <CardContent className="flex flex-col items-center">
             <div
-              className={`p-8 rounded-full mb-4 transition-colors ${isBroadcasting ? 'bg-red-100' : 'bg-gray-100'}`}
+              className={`p-8 rounded-full relative mb-4 transition-colors ${isBroadcasting ? 'bg-red-100' : 'bg-gray-100'}`}
             >
               <Button
+                disabled={status === 'offline'}
                 variant={isBroadcasting ? 'destructive' : 'default'}
                 size="icon"
                 className={cn(
-                  'h-16 w-16 rounded-full',
-                  isBroadcasting && 'pulse',
+                  'h-16 w-16 rounded-full ',
+                  isBroadcasting && 'animate-pulse',
                 )}
                 onClick={toggleBroadcast}
               >
+                <div className="absolute inset-0"></div>
+
                 {isBroadcasting ? (
                   <FaMicrophone className="size-8" />
                 ) : (
@@ -189,7 +230,11 @@ function RouteComponent() {
               </Button>
             </div>
             <div className="text-center">
-              {isBroadcasting ? (
+              {status === 'offline' ? (
+                <div className="text-red-500 font-medium">
+                  Check your connection
+                </div>
+              ) : isBroadcasting ? (
                 <div className="text-red-500 font-medium">
                   Broadcasting... Tap to stop
                 </div>
