@@ -306,8 +306,10 @@ func (r *Room) RemoveListenerTracks(participantId ParticipantID) {
 	for _, s := range r.speakers {
 		speakerIds = append(speakerIds, string(s.Id))
 	}
+
 	for _, speakerId := range speakerIds {
-		for i, t := range r.tracks[ParticipantID(speakerId)] {
+		var filteredTracks []*webrtc.TrackLocalStaticRTP
+		for _, t := range r.tracks[ParticipantID(speakerId)] {
 			streamId := t.StreamID()
 			parts := strings.Split(streamId, ":")
 
@@ -317,10 +319,10 @@ func (r *Room) RemoveListenerTracks(participantId ParticipantID) {
 			listenerId := parts[1]
 
 			if listenerId != string(participantId) {
-				continue
+				filteredTracks = append(filteredTracks, t)
 			}
-			r.tracks[ParticipantID(speakerId)] = slices.Delete(r.tracks[ParticipantID(speakerId)], i, i+1)
 		}
+		r.tracks[ParticipantID(speakerId)] = filteredTracks
 	}
 }
 

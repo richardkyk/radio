@@ -27,77 +27,90 @@ function RouteComponent() {
   const [isListening, setIsListening] = useState(false)
   const [status, setStatus] = useState<string>('idle')
 
+  const [mergedStream] = useState<MediaStream>(new MediaStream())
+
   const webSocketRef = useRef<WebSocket | null>(null)
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null)
   const answerReceivedRef = useRef(false)
   const audioElement = useRef<HTMLAudioElement>(null)
   const iceCandidatesRef = useRef<RTCIceCandidateInit[]>([])
-  const audioStreamRef = useRef<MediaStream | null>(null)
+
+  const playAudio = () => {
+    if (!webSocketRef.current) {
+      toast.error('Connection error', {
+        description: 'Please refresh the page and try again',
+      })
+      setStatus('offline')
+      return
+    }
+    console.log('starting')
+    setIsListening(true)
+
+    try {
+      const pc = new RTCPeerConnection({
+        iceServers: [],
+      })
+      peerConnectionRef.current = pc
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          webSocketRef.current?.send(
+            JSON.stringify({ type: 'ice', data: event.candidate }),
+          )
+        }
+      }
+
+      pc.ontrack = (event) => {
+        if (event.track.kind === 'audio') {
+          const streamId = event.streams[0].id
+          if (streamId.includes('server')) return
+          console.log(event)
+          // audioElement.current!.srcObject = event.streams[0]
+          event.streams[0]
+            .getTracks()
+            .forEach((track) => mergedStream.addTrack(track))
+
+          if (audioElement.current && !audioElement.current.srcObject) {
+            console.log('setting audio src')
+            audioElement.current.srcObject = mergedStream
+            audioElement.current
+              .play()
+              .then(() => {
+                console.log('Playing audio')
+              })
+              .catch((err) => console.error('Error playing audio:', err))
+          }
+        }
+      }
+
+      webSocketRef.current?.send(JSON.stringify({ type: 'listening-started' }))
+    } catch (error) {
+      console.error(error)
+      setIsListening(false)
+    }
+  }
+
+  const stopAudio = () => {
+    console.log('stopping')
+    // Stop recording
+    mergedStream.getTracks().forEach((track) => {
+      track.stop()
+      console.log(track)
+      mergedStream.removeTrack(track)
+    })
+    peerConnectionRef.current?.close()
+    peerConnectionRef.current = null
+    webSocketRef.current?.send(JSON.stringify({ type: 'listening-stopped' }))
+    answerReceivedRef.current = false
+    setIsListening(false)
+  }
 
   // Toggle listening state
   const toggleListening = () => {
     if (isListening) {
-      console.log('stopping')
-      // Stop recording
-      if (audioStreamRef.current) {
-        audioStreamRef.current.getTracks().forEach((track) => track.stop())
-        audioStreamRef.current = null
-      }
-      peerConnectionRef.current?.close()
-      peerConnectionRef.current = null
-      webSocketRef.current?.send(JSON.stringify({ type: 'listening-stopped' }))
-      answerReceivedRef.current = false
-      setIsListening(false)
+      stopAudio()
     } else {
-      if (!webSocketRef.current) {
-        toast.error('Connection error', {
-          description: 'Please refresh the page and try again',
-        })
-        setStatus('offline')
-        return
-      }
-      console.log('starting')
-      setIsListening(true)
-
-      const combinedStream = new MediaStream()
-      audioStreamRef.current = combinedStream
-      try {
-        const pc = new RTCPeerConnection({
-          iceServers: [],
-        })
-        peerConnectionRef.current = pc
-
-        pc.onicecandidate = (event) => {
-          if (event.candidate) {
-            webSocketRef.current?.send(
-              JSON.stringify({ type: 'ice', data: event.candidate }),
-            )
-          }
-        }
-
-        pc.ontrack = (event) => {
-          if (event.track.kind === 'audio') {
-            combinedStream.addTrack(event.track)
-            console.log(event)
-          }
-        }
-
-        webSocketRef.current?.send(
-          JSON.stringify({ type: 'listening-started' }),
-        )
-        if (audioElement.current) {
-          audioElement.current.srcObject = combinedStream
-          audioElement.current
-            .play()
-            .then(() => {
-              console.log('Playing audio')
-            })
-            .catch((err) => console.error('Error playing audio:', err))
-        }
-      } catch (error) {
-        console.error(error)
-        setIsListening(false)
-      }
+      playAudio()
     }
   }
 
@@ -142,12 +155,13 @@ function RouteComponent() {
           )
         }
         iceCandidatesRef.current = []
-      } else if (msg.type === 'speaker-connect') {
+      } else if (msg.type === 'speaker-connected') {
+        if (!answerReceivedRef.current) return
         console.log('Speaker connected')
-        audioElement.current?.play()
-      } else if (msg.type === 'speaker-disconnect') {
+        playAudio()
+      } else if (msg.type === 'speaker-disconnected') {
         console.log('Speaker disconnected')
-        audioElement.current?.pause()
+        stopAudio()
       }
     }
 
@@ -251,7 +265,7 @@ function RouteComponent() {
           </CardContent>
         </Card>
 
-        <audio id="audio" ref={audioElement} controls></audio>
+        <audio ref={audioElement} controls autoPlay className="hidden"></audio>
 
         <div className="text-sm text-gray-500 text-center">
           No one is speaking right now. Please wait for speakers to join.

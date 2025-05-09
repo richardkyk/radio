@@ -56,6 +56,7 @@ func handleSpeakerWS(w http.ResponseWriter, r *http.Request) {
 		chatRoom.RemoveSpeaker(participant.Id)
 		chatRoom.RemoveSpeakerTracks(participant.Id)
 		chatRoom.RemoveParticipant(&participant)
+		chatRoom.GetStats()
 	}()
 
 	for {
@@ -132,6 +133,7 @@ func handleListenerWS(w http.ResponseWriter, r *http.Request) {
 		chatRoom.RemoveListener(participant.Id)
 		chatRoom.RemoveListenerTracks(participant.Id)
 		chatRoom.RemoveParticipant(&participant)
+		chatRoom.GetStats()
 	}()
 
 	// Process WebSocket messages from the listener
