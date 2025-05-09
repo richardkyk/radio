@@ -1,70 +1,20 @@
 <!doctype html>
-<html>
+<html lang="en">
   <head>
-    <title>Audio Recorder</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="/favicon.ico" />
+    <meta name="theme-color" content="#000000" />
+    <meta
+      name="description"
+      content="Web site created using create-tsrouter-app"
+    />
+    <link rel="apple-touch-icon" href="/logo192.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <title>Radio</title>
   </head>
   <body>
-    <button id="start">Start Recording</button>
-    <button id="stop">Stop Recording</button>
-
-    <script>
-      let pc;
-      let ws;
-      let stream;
-      let answerReceived = false;
-      const candidates = [];
-
-      async function startRecording() {
-        pc = new RTCPeerConnection({
-          iceServers: [],
-        });
-        ws = new WebSocket("/ws/speaker".replace(/^http/, "ws"));
-
-        ws.onmessage = async (event) => {
-          const msg = JSON.parse(event.data);
-          if (msg.type === "answer") {
-            const answer = new RTCSessionDescription(msg.data);
-            await pc.setRemoteDescription(answer);
-            answerReceived = true;
-          } else if (msg.type === "ice") {
-            candidates.push(msg.data);
-            if (!answerReceived) return;
-            for (const candidate of candidates) {
-              await pc.addIceCandidate(new RTCIceCandidate(candidate));
-            }
-            candidates = [];
-          }
-        };
-
-        ws.onopen = async () => {
-          stream = await navigator.mediaDevices.getUserMedia({
-            audio: true,
-          });
-          stream.getTracks().forEach((track) => pc.addTrack(track, stream));
-
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-
-          ws.send(JSON.stringify({ type: "offer", data: offer }));
-        };
-
-        pc.onicecandidate = (event) => {
-          if (event.candidate) {
-            ws.send(JSON.stringify({ type: "ice", data: event.candidate }));
-          }
-        };
-      }
-
-      document.getElementById("start").onclick = startRecording;
-
-      document.getElementById("stop").onclick = () => {
-        if (stream) {
-          stream.getTracks().forEach((t) => t.stop());
-          stream = null;
-        }
-        if (ws) ws.close();
-        if (pc) pc.close();
-      };
-    </script>
+    <div id="app"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
