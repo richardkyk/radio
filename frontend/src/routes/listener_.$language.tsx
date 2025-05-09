@@ -31,6 +31,7 @@ function RouteComponent() {
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null)
   const answerReceivedRef = useRef(false)
   const audioElement = useRef<HTMLAudioElement>(null)
+  const iceCandidatesRef = useRef<RTCIceCandidateInit[]>([])
   const audioStreamRef = useRef<MediaStream | null>(null)
 
   // Toggle listening state
@@ -57,15 +58,16 @@ function RouteComponent() {
       }
       console.log('starting')
       setIsListening(true)
+
+      const combinedStream = new MediaStream()
+      audioStreamRef.current = combinedStream
       try {
         const pc = new RTCPeerConnection({
           iceServers: [],
         })
         peerConnectionRef.current = pc
 
-        console.log(peerConnectionRef.current)
         pc.onicecandidate = (event) => {
-          console.log(event)
           if (event.candidate) {
             webSocketRef.current?.send(
               JSON.stringify({ type: 'ice', data: event.candidate }),
@@ -75,22 +77,25 @@ function RouteComponent() {
 
         pc.ontrack = (event) => {
           if (event.track.kind === 'audio') {
-            audioStreamRef.current = event.streams[0]
-            console.log('Audio track received: ', event.track)
+            combinedStream.addTrack(event.track)
+            console.log(event)
           }
         }
 
         webSocketRef.current?.send(
           JSON.stringify({ type: 'listening-started' }),
         )
-        if (!audioElement.current) return
-
-        audioElement.current.srcObject = audioStreamRef.current
-        audioElement.current
-          .play()
-          .catch((err) => console.error('Error playing audio:', err))
+        if (audioElement.current) {
+          audioElement.current.srcObject = combinedStream
+          audioElement.current
+            .play()
+            .then(() => {
+              console.log('Playing audio')
+            })
+            .catch((err) => console.error('Error playing audio:', err))
+        }
       } catch (error) {
-        console.error('Error accessing microphone:', error)
+        console.error(error)
         setIsListening(false)
       }
     }
@@ -113,18 +118,33 @@ function RouteComponent() {
         const answer = await peerConnectionRef.current?.createAnswer()
         await peerConnectionRef.current?.setLocalDescription(answer)
 
+        answerReceivedRef.current = true
         ws.send(
           JSON.stringify({
             type: 'answer',
             data: answer,
           }),
         )
+        if (!iceCandidatesRef.current.length) return
+
+        for (const candidate of iceCandidatesRef.current) {
+          await peerConnectionRef.current?.addIceCandidate(
+            new RTCIceCandidate(candidate),
+          )
+        }
+        iceCandidatesRef.current = []
       } else if (msg.type === 'ice') {
-        await peerConnectionRef.current?.addIceCandidate(
-          new RTCIceCandidate(msg.data),
-        )
+        iceCandidatesRef.current.push(msg.data)
+        if (!answerReceivedRef.current) return
+        for (const candidate of iceCandidatesRef.current) {
+          await peerConnectionRef.current?.addIceCandidate(
+            new RTCIceCandidate(candidate),
+          )
+        }
+        iceCandidatesRef.current = []
       } else if (msg.type === 'speaker-connect') {
         console.log('Speaker connected')
+        audioElement.current?.play()
       } else if (msg.type === 'speaker-disconnect') {
         console.log('Speaker disconnected')
         audioElement.current?.pause()
@@ -231,7 +251,7 @@ function RouteComponent() {
           </CardContent>
         </Card>
 
-        <audio id="audio" ref={audioElement} className="hidden"></audio>
+        <audio id="audio" ref={audioElement} controls></audio>
 
         <div className="text-sm text-gray-500 text-center">
           No one is speaking right now. Please wait for speakers to join.

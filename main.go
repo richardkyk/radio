@@ -13,23 +13,23 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
-var (
-	//go:embed frontend/index.html
-	indexHTML string
+// var (
+// 	//go:embed frontend/index.html
+// 	indexHTML string
+//
+// 	//go:embed frontend/listener.html
+// 	listenerHTML string
+// )
 
-	//go:embed frontend/listener.html
-	listenerHTML string
-)
-
-func speakerFrontendHander(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html")
-	w.Write([]byte(indexHTML))
-}
-
-func listenerFrontendHander(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html")
-	w.Write([]byte(listenerHTML))
-}
+// func speakerFrontendHander(w http.ResponseWriter, r *http.Request) {
+// 	w.Header().Set("Content-Type", "text/html")
+// 	w.Write([]byte(indexHTML))
+// }
+//
+// func listenerFrontendHander(w http.ResponseWriter, r *http.Request) {
+// 	w.Header().Set("Content-Type", "text/html")
+// 	w.Write([]byte(listenerHTML))
+// }
 
 // Handle offer from the speaker
 func handleSpeakerWS(w http.ResponseWriter, r *http.Request) {
@@ -47,12 +47,16 @@ func handleSpeakerWS(w http.ResponseWriter, r *http.Request) {
 	topic := params.Get("topic")
 
 	chatRoom := room.GetOrCreateRoom(topic)
-	speaker := room.Speaker{
-		Id: room.SpeakerID(uuid.NewString()),
+	participant := room.Participant{
+		Id: room.ParticipantID(uuid.NewString()),
 		Ws: conn,
 	}
-	chatRoom.AddSpeaker(&speaker)
-	defer chatRoom.RemoveSpeaker(&speaker)
+	chatRoom.AddParticipant(&participant)
+	defer func() {
+		chatRoom.RemoveSpeaker(participant.Id)
+		chatRoom.RemoveSpeakerTracks(participant.Id)
+		chatRoom.RemoveParticipant(&participant)
+	}()
 
 	for {
 		var msg room.Signal
@@ -67,17 +71,24 @@ func handleSpeakerWS(w http.ResponseWriter, r *http.Request) {
 
 		switch msg.Type {
 		case "broadcast-started":
+			speaker := room.Speaker{
+				Participant: &participant,
+			}
+			chatRoom.AddSpeaker(&speaker)
 			if err := speaker.CreatePeerConnection(); err != nil {
 				log.Println("Peer connection error:", err)
+				chatRoom.RemoveSpeaker(participant.Id)
+				chatRoom.RemoveSpeakerTracks(participant.Id)
 				continue
 			}
+			chatRoom.GetStats()
 		case "offer":
 			var offer webrtc.SessionDescription
 			if err := json.Unmarshal(msg.Data, &offer); err != nil {
 				log.Println("Invalid offer:", err)
 				return
 			}
-			if err := speaker.AcceptOffer(offer); err != nil {
+			if err := participant.Speaker.AcceptOffer(offer); err != nil {
 				log.Println("Accept offer error:", err)
 				return
 			}
@@ -87,7 +98,11 @@ func handleSpeakerWS(w http.ResponseWriter, r *http.Request) {
 				log.Println("Invalid ICE candidate:", err)
 				continue
 			}
-			speaker.AddIceCandidate(candidate)
+			participant.Speaker.AddIceCandidate(candidate)
+		case "broadcast-stopped":
+			chatRoom.RemoveSpeaker(participant.Id)
+			chatRoom.RemoveSpeakerTracks(participant.Id)
+			chatRoom.GetStats()
 		}
 	}
 }
@@ -108,12 +123,16 @@ func handleListenerWS(w http.ResponseWriter, r *http.Request) {
 	topic := params.Get("topic")
 
 	chatRoom := room.GetOrCreateRoom(topic)
-	listener := room.Listener{
-		Id: room.ListenerID(uuid.NewString()),
+	participant := room.Participant{
+		Id: room.ParticipantID(uuid.NewString()),
 		Ws: conn,
 	}
-	chatRoom.AddListener(&listener)
-	defer chatRoom.RemoveListener(&listener)
+	chatRoom.AddParticipant(&participant)
+	defer func() {
+		chatRoom.RemoveListener(participant.Id)
+		chatRoom.RemoveListenerTracks(participant.Id)
+		chatRoom.RemoveParticipant(&participant)
+	}()
 
 	// Process WebSocket messages from the listener
 	for {
@@ -129,17 +148,24 @@ func handleListenerWS(w http.ResponseWriter, r *http.Request) {
 
 		switch msg.Type {
 		case "listening-started":
+			listener := room.Listener{
+				Participant: &participant,
+			}
+			chatRoom.AddListener(&listener)
 			if err := listener.CreatePeerConnection(); err != nil {
 				log.Println("Peer connection error:", err)
+				chatRoom.RemoveListener(participant.Id)
+				chatRoom.RemoveListenerTracks(participant.Id)
 				continue
 			}
+			chatRoom.GetStats()
 		case "answer":
 			var answer webrtc.SessionDescription
 			if err := json.Unmarshal(msg.Data, &answer); err != nil {
 				log.Println("Invalid answer:", err)
 				continue
 			}
-			if err := listener.AcceptAnswer(answer); err != nil {
+			if err := participant.Listener.AcceptAnswer(answer); err != nil {
 				log.Println("Accept answer error:", err)
 				continue
 			}
@@ -149,14 +175,18 @@ func handleListenerWS(w http.ResponseWriter, r *http.Request) {
 				log.Println("Invalid ICE candidate:", err)
 				continue
 			}
-			listener.AddIceCandidate(candidate)
+			participant.Listener.AddIceCandidate(candidate)
+		case "listening-stopped":
+			chatRoom.RemoveListener(participant.Id)
+			chatRoom.RemoveListenerTracks(participant.Id)
+			chatRoom.GetStats()
 		}
 	}
 }
 
 func main() {
-	http.HandleFunc("/", listenerFrontendHander)
-	http.HandleFunc("/speaker", speakerFrontendHander)
+	// http.HandleFunc("/", listenerFrontendHander)
+	// http.HandleFunc("/speaker", speakerFrontendHander)
 	http.HandleFunc("/ws/speaker", handleSpeakerWS)
 	http.HandleFunc("/ws/listener", handleListenerWS)
 
