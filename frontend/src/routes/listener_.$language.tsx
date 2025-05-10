@@ -28,11 +28,11 @@ function RouteComponent() {
   const [status, setStatus] = useState<string>('idle')
 
   const [mergedStream] = useState<MediaStream>(new MediaStream())
+  const audioElement = useRef<HTMLAudioElement>(null)
 
   const webSocketRef = useRef<WebSocket | null>(null)
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null)
   const answerReceivedRef = useRef(false)
-  const audioElement = useRef<HTMLAudioElement>(null)
   const iceCandidatesRef = useRef<RTCIceCandidateInit[]>([])
 
   const playAudio = () => {
@@ -102,6 +102,7 @@ function RouteComponent() {
     peerConnectionRef.current = null
     webSocketRef.current?.send(JSON.stringify({ type: 'listening-stopped' }))
     answerReceivedRef.current = false
+    audioElement.current!.srcObject = null
     setIsListening(false)
   }
 
@@ -156,7 +157,7 @@ function RouteComponent() {
         }
         iceCandidatesRef.current = []
       } else if (msg.type === 'speaker-connected') {
-        if (!answerReceivedRef.current) return
+        if (answerReceivedRef.current) return
         console.log('Speaker connected')
         playAudio()
       } else if (msg.type === 'speaker-disconnected') {
