@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import { FaChevronLeft } from 'react-icons/fa'
-import { FaMicrophone } from 'react-icons/fa6'
+import { FaMicrophone, FaUser } from 'react-icons/fa6'
 import { toast } from 'sonner'
 
 export const Route = createFileRoute('/speaker_/$language')({
@@ -26,6 +26,7 @@ function RouteComponent() {
   const [isBroadcasting, setIsBroadcasting] = useState(false)
   const [stream, setStream] = useState<MediaStream | null>(null)
   const [status, setStatus] = useState<string>('idle')
+  const [participantCount, setParticipantCount] = useState(0)
 
   const webSocketRef = useRef<WebSocket | null>(null)
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null)
@@ -36,7 +37,7 @@ function RouteComponent() {
   // Handle microphone access
   const toggleBroadcast = async () => {
     if (isBroadcasting) {
-      console.log('stopping')
+      console.log('broadcast stopping')
       // Stop recording
       if (stream) {
         stream.getTracks().forEach((track) => track.stop())
@@ -56,7 +57,7 @@ function RouteComponent() {
         setStatus('offline')
         return
       }
-      console.log('starting')
+      console.log('broadcast starting')
       setIsBroadcasting(true)
       try {
         webSocketRef.current?.send(
@@ -67,7 +68,6 @@ function RouteComponent() {
         })
         peerConnectionRef.current = pc
         pc.onicecandidate = (event) => {
-          console.log(event)
           if (event.candidate) {
             webSocketRef.current?.send(
               JSON.stringify({ type: 'ice', data: event.candidate }),
@@ -120,7 +120,6 @@ function RouteComponent() {
 
   // handle websocket
   useEffect(() => {
-    console.log('websocket start')
     if (webSocketRef.current) return
     const wsUrl = new URL(`wss://localhost/ws/speaker?topic=${language}`)
     const ws = new WebSocket(wsUrl)
@@ -141,9 +140,12 @@ function RouteComponent() {
           )
         }
         iceCandidatesRef.current = []
+      } else if (msg.type === 'participant-count') {
+        setParticipantCount(msg.data)
       }
     }
     ws.onopen = async () => {
+      console.log('websocket opened')
       ws.send(JSON.stringify({ type: 'speaker-connected' }))
       setStatus('online')
     }
@@ -158,7 +160,7 @@ function RouteComponent() {
       })
     }
     return () => {
-      console.log('websocket stop')
+      console.log('websocket closed')
       webSocketRef.current = null
       setStatus('idle')
       if (ws.readyState === WebSocket.OPEN) {
@@ -184,9 +186,12 @@ function RouteComponent() {
           <CardHeader>
             <div className="flex gap-2 items-center">
               <CardTitle>Speaking Room</CardTitle>
+              <Badge variant="secondary" className="gap-1.5 ml-auto">
+                <FaUser className="size-4" />
+                <span className="font-semibold">{participantCount}</span>
+              </Badge>
               <Badge
                 variant="outline"
-                className="ml-auto"
                 style={{
                   borderColor: `var(${
                     STATUSES.find((s) => s.code === status)?.color
@@ -206,7 +211,6 @@ function RouteComponent() {
                 ></div>
                 {STATUSES.find((s) => s.code === status)?.name}
               </Badge>
-              <Badge variant="outline">1 listening</Badge>
             </div>
             <CardDescription>
               Speak clearly into your microphone. Your voice will be transmitted

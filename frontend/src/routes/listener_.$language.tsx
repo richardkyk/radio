@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import { FaChevronLeft } from 'react-icons/fa'
-import { FaPause, FaVolumeHigh } from 'react-icons/fa6'
+import { FaPause, FaUser, FaVolumeHigh } from 'react-icons/fa6'
 import { toast } from 'sonner'
 
 export const Route = createFileRoute('/listener_/$language')({
@@ -26,6 +26,7 @@ function RouteComponent() {
 
   const [isListening, setIsListening] = useState(false)
   const [status, setStatus] = useState<string>('idle')
+  const [participantCount, setParticipantCount] = useState(0)
 
   const [mergedStream] = useState<MediaStream>(new MediaStream())
   const audioElement = useRef<HTMLAudioElement>(null)
@@ -43,7 +44,7 @@ function RouteComponent() {
       setStatus('offline')
       return
     }
-    console.log('starting')
+    console.log('listening starting')
     setIsListening(true)
 
     try {
@@ -91,7 +92,7 @@ function RouteComponent() {
   }
 
   const stopAudio = () => {
-    console.log('stopping')
+    console.log('listening stopping')
     // Stop recording
     mergedStream.getTracks().forEach((track) => {
       track.stop()
@@ -117,7 +118,6 @@ function RouteComponent() {
 
   // handle websocket
   useEffect(() => {
-    console.log('websocket start')
     if (webSocketRef.current) return
     const wsUrl = new URL(`wss://localhost/ws/listener?topic=${language}`)
     const ws = new WebSocket(wsUrl)
@@ -163,11 +163,13 @@ function RouteComponent() {
       } else if (msg.type === 'speaker-disconnected') {
         console.log('Speaker disconnected')
         stopAudio()
+      } else if (msg.type === 'participant-count') {
+        setParticipantCount(msg.data)
       }
     }
 
     ws.onopen = async () => {
-      console.log('WebSocket connected')
+      console.log('websocket opened')
       ws.send(JSON.stringify({ type: 'listener-connected' }))
       setStatus('online')
     }
@@ -182,7 +184,7 @@ function RouteComponent() {
       })
     }
     return () => {
-      console.log('websocket stop')
+      console.log('websocket closed')
       webSocketRef.current = null
       setStatus('idle')
       if (ws.readyState === WebSocket.OPEN) {
@@ -208,9 +210,12 @@ function RouteComponent() {
           <CardHeader>
             <div className="flex gap-2 items-center">
               <CardTitle>Listening Room</CardTitle>
+              <Badge variant="secondary" className="gap-1.5 ml-auto">
+                <FaUser className="size-4" />
+                <span className="font-semibold">{participantCount}</span>
+              </Badge>
               <Badge
                 variant="outline"
-                className="ml-auto"
                 style={{
                   borderColor: `var(${
                     STATUSES.find((s) => s.code === status)?.color
@@ -230,7 +235,6 @@ function RouteComponent() {
                 ></div>
                 {STATUSES.find((s) => s.code === status)?.name}
               </Badge>
-              <Badge variant="outline">1 speaking</Badge>
             </div>
             <CardDescription>
               Listen to speakers in {languageName}. Audio will be translated in
@@ -271,9 +275,11 @@ function RouteComponent() {
 
         <audio ref={audioElement} controls autoPlay className="hidden"></audio>
 
-        <div className="text-sm text-gray-500 text-center">
-          No one is speaking right now. Please wait for speakers to join.
-        </div>
+        {participantCount <= 1 && (
+          <div className="text-sm text-gray-500 text-center">
+            No one is speaking right now. Please wait for speakers to join.
+          </div>
+        )}
       </div>
     </main>
   )

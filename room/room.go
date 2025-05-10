@@ -213,6 +213,11 @@ func (r *Room) AddParticipant(participant *Participant) {
 	participant.Room = r
 	log.Printf("Adding Participant (%s) to Room (%s)", participant.Id, r.id)
 	r.participants = append(r.participants, participant)
+	partcipantCount, _ := json.Marshal(r.GetParticipants())
+	r.NotifyParticipants(Signal{
+		Type: "participant-count",
+		Data: partcipantCount,
+	})
 }
 
 func (r *Room) AddSpeaker(speaker *Speaker) {
@@ -237,6 +242,11 @@ func (r *Room) RemoveParticipant(participant *Participant) {
 		// Remove the participant from the slice
 		log.Printf("Removing Participant (%s) from Room (%s)", participant.Id, r.id)
 		r.participants = slices.Delete(r.participants, i, i+1)
+		partcipantCount, _ := json.Marshal(r.GetParticipants())
+		r.NotifyParticipants(Signal{
+			Type: "participant-count",
+			Data: partcipantCount,
+		})
 		break
 	}
 }
@@ -318,6 +328,10 @@ func (r *Room) RemoveListenerTracks(participantId ParticipantID) {
 		}
 		r.tracks[ParticipantID(speakerId)] = filteredTracks
 	}
+}
+
+func (r *Room) GetParticipants() int {
+	return len(r.participants)
 }
 
 func (r *Room) NotifyParticipants(payload Signal) {
