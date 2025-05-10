@@ -121,7 +121,9 @@ function RouteComponent() {
   // handle websocket
   useEffect(() => {
     if (webSocketRef.current) return
-    const wsUrl = new URL(`wss://localhost/ws/speaker?topic=${language}`)
+    const wsUrl = new URL(
+      `${import.meta.env.VITE_WS_URL}/speaker?topic=${language}`,
+    )
     const ws = new WebSocket(wsUrl)
     webSocketRef.current = ws
 
