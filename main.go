@@ -3,33 +3,21 @@ package main
 import (
 	_ "embed"
 	"encoding/json"
+	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
-	"radio/room"
+	"os"
+	"radio/backend"
+	"radio/ui"
+	"strings"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v4"
 )
-
-// var (
-// 	//go:embed frontend/index.html
-// 	indexHTML string
-//
-// 	//go:embed frontend/listener.html
-// 	listenerHTML string
-// )
-
-// func speakerFrontendHander(w http.ResponseWriter, r *http.Request) {
-// 	w.Header().Set("Content-Type", "text/html")
-// 	w.Write([]byte(indexHTML))
-// }
-//
-// func listenerFrontendHander(w http.ResponseWriter, r *http.Request) {
-// 	w.Header().Set("Content-Type", "text/html")
-// 	w.Write([]byte(listenerHTML))
-// }
 
 // Handle offer from the speaker
 func handleSpeakerWS(w http.ResponseWriter, r *http.Request) {
@@ -187,11 +175,34 @@ func handleListenerWS(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	// http.HandleFunc("/", listenerFrontendHander)
-	// http.HandleFunc("/speaker", speakerFrontendHander)
-	http.HandleFunc("/ws/speaker", handleSpeakerWS)
-	http.HandleFunc("/ws/listener", handleListenerWS)
+	engine := gin.Default()
 
-	log.Println("Listening on port 443...")
-	log.Fatal(http.ListenAndServeTLS(":443", ".cert/cert.pem", ".cert/key.pem", nil))
+	engine.GET("/api/speaker", gin.WrapF(handleSpeakerWS))
+	engine.GET("/api/listener", gin.WrapF(handleListenerWS))
+
+	staticHandler(engine)
+	engine.RunTLS(":443", ".cert/cert.pem", ".cert/key.pem")
+}
+
+func staticHandler(engine *gin.Engine) {
+	dist, _ := fs.Sub(ui.Dist, "dist")
+	fileServer := http.FileServer(http.FS(dist))
+
+	engine.Use(func(c *gin.Context) {
+		if !strings.HasPrefix(c.Request.URL.Path, "/api") {
+			// Check if the requested file exists
+			_, err := fs.Stat(dist, strings.TrimPrefix(c.Request.URL.Path, "/"))
+			if os.IsNotExist(err) {
+				// If the file does not exist, serve index.html
+				fmt.Println("File not found, serving index.html")
+				c.Request.URL.Path = "/"
+			} else {
+				// Serve other static files
+				fmt.Println("Serving other static files")
+			}
+
+			fileServer.ServeHTTP(c.Writer, c.Request)
+			c.Abort()
+		}
+	})
 }
