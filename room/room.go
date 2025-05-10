@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"slices"
-	"strings"
 
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v4"
@@ -117,7 +116,7 @@ func (s *Speaker) AcceptOffer(offer webrtc.SessionDescription) error {
 	})
 
 	data, _ := json.Marshal(s.Id)
-	s.Room.NotifyListeners(Signal{
+	s.Room.NotifyParticipants(Signal{
 		Type: "speaker-connected",
 		Data: data,
 	})
@@ -196,7 +195,7 @@ func (l *Listener) AcceptAnswer(answer webrtc.SessionDescription) error {
 	}
 
 	data, _ := json.Marshal(l.Id)
-	l.Room.NotifySpeakers(Signal{
+	l.Room.NotifyParticipants(Signal{
 		Type: "listener-connected",
 		Data: data,
 	})
@@ -262,7 +261,7 @@ func (r *Room) RemoveSpeaker(participantId ParticipantID) {
 		r.speakers = slices.Delete(r.speakers, i, i+1)
 
 		data, _ := json.Marshal(s.Id)
-		r.NotifyListeners(Signal{
+		r.NotifyParticipants(Signal{
 			Type: "speaker-disconnected",
 			Data: data,
 		})
@@ -293,7 +292,7 @@ func (r *Room) RemoveListener(participantId ParticipantID) {
 		// Remove the listener from the slice
 		r.listeners = slices.Delete(r.listeners, i, i+1)
 		data, _ := json.Marshal(l.Id)
-		r.NotifySpeakers(Signal{
+		r.NotifyParticipants(Signal{
 			Type: "listener-disconnected",
 			Data: data,
 		})
@@ -310,31 +309,20 @@ func (r *Room) RemoveListenerTracks(participantId ParticipantID) {
 	for _, speakerId := range speakerIds {
 		var filteredTracks []*webrtc.TrackLocalStaticRTP
 		for _, t := range r.tracks[ParticipantID(speakerId)] {
-			streamId := t.StreamID()
-			parts := strings.Split(streamId, ":")
-
-			if len(parts) != 2 {
-				continue
-			}
-			listenerId := parts[1]
-
-			if listenerId != string(participantId) {
-				filteredTracks = append(filteredTracks, t)
+			for _, listener := range r.listeners {
+				streamId := fmt.Sprintf("%s:%s", speakerId, listener.Id)
+				if t.StreamID() == streamId {
+					filteredTracks = append(filteredTracks, t)
+				}
 			}
 		}
 		r.tracks[ParticipantID(speakerId)] = filteredTracks
 	}
 }
 
-func (r *Room) NotifyListeners(payload Signal) {
-	for _, l := range r.listeners {
-		l.Ws.WriteJSON(payload)
-	}
-}
-
-func (r *Room) NotifySpeakers(payload Signal) {
-	for _, s := range r.speakers {
-		s.Ws.WriteJSON(payload)
+func (r *Room) NotifyParticipants(payload Signal) {
+	for _, p := range r.participants {
+		p.Ws.WriteJSON(payload)
 	}
 }
 
