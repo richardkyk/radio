@@ -222,7 +222,7 @@ function RouteComponent() {
                 variant={isBroadcasting ? 'destructive' : 'default'}
                 size="icon"
                 className={cn(
-                  'h-16 w-16 rounded-full ',
+                  'size-16 rounded-full ',
                   isBroadcasting && 'animate-pulse',
                 )}
                 onClick={toggleBroadcast}

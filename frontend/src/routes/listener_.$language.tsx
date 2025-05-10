@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import { FaChevronLeft } from 'react-icons/fa'
-import { FaVolumeHigh, FaVolumeOff } from 'react-icons/fa6'
+import { FaPause, FaVolumeHigh } from 'react-icons/fa6'
 import { toast } from 'sonner'
 
 export const Route = createFileRoute('/listener_/$language')({
@@ -239,18 +239,21 @@ function RouteComponent() {
           </CardHeader>
           <CardContent className="flex flex-col items-center">
             <div
-              className={`p-8 rounded-full mb-4 transition-colors ${isListening ? 'bg-green-100' : 'bg-gray-100'}`}
+              className={`p-8 relative rounded-full mb-4 transition-colors ${isListening ? 'bg-green-100' : 'bg-gray-100'}`}
             >
               <Button
-                variant={isListening ? 'default' : 'outline'}
                 size="icon"
-                className="h-16 w-16 rounded-full"
+                className={cn(
+                  'size-16 rounded-full ',
+                  isListening && 'animate-pulse',
+                )}
                 onClick={toggleListening}
               >
+                <div className="absolute inset-0"></div>
                 {isListening ? (
-                  <FaVolumeHigh className="h-8 w-8" />
+                  <FaPause className="size-8" />
                 ) : (
-                  <FaVolumeOff className="h-8 w-8" />
+                  <FaVolumeHigh className="size-8" />
                 )}
               </Button>
             </div>
