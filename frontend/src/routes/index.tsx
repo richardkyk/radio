@@ -6,6 +6,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { createFileRoute, Link } from '@tanstack/react-router'
+import { useEffect } from 'react'
 import { FaHeadphones, FaMicrophone } from 'react-icons/fa'
 
 export const Route = createFileRoute('/')({
@@ -13,6 +14,10 @@ export const Route = createFileRoute('/')({
 })
 
 function App() {
+  useEffect(() => {
+    document.title = 'Radio'
+  }, [])
+
   return (
     <main className="flex min-h-[calc(100vh-2.5rem)] flex-col p-4 bg-gray-50">
       <div className="w-full max-w-md mx-auto space-y-4">

@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { LANGUAGES } from '@/lib/constants'
 import { Link } from '@tanstack/react-router'
+import { useEffect } from 'react'
 import { FaChevronLeft } from 'react-icons/fa'
 
 interface LanguageSelectionProps {
@@ -10,6 +11,11 @@ interface LanguageSelectionProps {
 
 export default function LanguageSelection(props: LanguageSelectionProps) {
   const { role } = props
+
+  useEffect(() => {
+    document.title = `Language Selection`
+  }, [role])
+
   return (
     <main className="flex min-h-[calc(100vh-2.5rem)] flex-col p-4 bg-gray-50">
       <div className="w-full max-w-md mx-auto space-y-4">

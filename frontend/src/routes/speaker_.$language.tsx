@@ -170,6 +170,10 @@ function RouteComponent() {
     }
   }, [language])
 
+  useEffect(() => {
+    document.title = `Speaking to ${languageName} Room`
+  }, [languageName])
+
   return (
     <main className="flex min-h-[calc(100vh-2.5rem)] flex-col p-4 bg-gray-50">
       <div className="w-full max-w-md mx-auto space-y-4">
