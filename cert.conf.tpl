@@ -6,10 +6,10 @@ req_extensions = req_ext
 distinguished_name = dn
 
 [dn]
-CN = 192.168.86.21
+CN = {{CERT_IP}}
 
 [req_ext]
 subjectAltName = @alt_names
 
 [alt_names]
-IP.1 = 192.168.86.21
+IP.1 = {{CERT_IP}}
