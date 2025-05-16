@@ -1,3 +1,7 @@
+import { Link, createFileRoute } from '@tanstack/react-router'
+import { useCallback, useEffect, useState } from 'react'
+import { FaChevronLeft } from 'react-icons/fa'
+import { FaMicrophone, FaUser } from 'react-icons/fa6'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -11,10 +15,6 @@ import { LANGUAGES, STATUSES } from '@/lib/constants'
 import { useSpeakerStore } from '@/lib/use-speaker-store'
 import { cn } from '@/lib/utils'
 import { useWebSocketStore } from '@/lib/web-socket-store'
-import { createFileRoute, Link } from '@tanstack/react-router'
-import { useCallback, useEffect, useState } from 'react'
-import { FaChevronLeft } from 'react-icons/fa'
-import { FaMicrophone, FaUser } from 'react-icons/fa6'
 
 export const Route = createFileRoute('/speaker_/$language')({
   component: RouteComponent,

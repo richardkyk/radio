@@ -6,7 +6,7 @@ interface SpeakerState {
   stream: MediaStream | null
   pc: RTCPeerConnection | null
   answerReceived: boolean
-  iceCandidates: RTCIceCandidateInit[]
+  iceCandidates: Array<RTCIceCandidateInit>
   start: () => Promise<void>
   stop: () => void
   toggle: () => void
@@ -32,19 +32,22 @@ export const useSpeakerStore = create<SpeakerState>((set, get) => ({
       const pc = new RTCPeerConnection({
         iceServers: [],
       })
+      set({ pc })
       pc.onicecandidate = (event) => {
         if (event.candidate) {
           sendMessage({ type: 'ice', data: event.candidate })
         }
       }
-      const stream = await navigator.mediaDevices.getUserMedia({
+      const currentStream = await navigator.mediaDevices.getUserMedia({
         audio: true,
       })
-      stream.getTracks().forEach((track) => pc.addTrack(track, stream))
+      currentStream
+        .getTracks()
+        .forEach((track) => pc.addTrack(track, currentStream))
 
       const offer = await pc.createOffer()
       await pc.setLocalDescription(offer)
-      set({ stream, pc })
+      set({ stream: currentStream })
       sendMessage({ type: 'offer', data: offer })
     } catch (error) {
       console.error('Error accessing microphone:', error)
@@ -91,8 +94,8 @@ export const useSpeakerStore = create<SpeakerState>((set, get) => ({
     const iceCandidates = get().iceCandidates
     iceCandidates.push(candidate)
     if (!get().answerReceived) return
-    for (const candidate of iceCandidates) {
-      await pc.addIceCandidate(new RTCIceCandidate(candidate))
+    for (const c of iceCandidates) {
+      await pc.addIceCandidate(new RTCIceCandidate(c))
     }
     set({ iceCandidates: [] })
   },

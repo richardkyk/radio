@@ -1,3 +1,6 @@
+import { Link, createFileRoute } from '@tanstack/react-router'
+import { useEffect } from 'react'
+import { FaHeadphones, FaMicrophone } from 'react-icons/fa'
 import {
   Card,
   CardContent,
@@ -5,9 +8,6 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import { createFileRoute, Link } from '@tanstack/react-router'
-import { useEffect } from 'react'
-import { FaHeadphones, FaMicrophone } from 'react-icons/fa'
 
 export const Route = createFileRoute('/')({
   component: App,
