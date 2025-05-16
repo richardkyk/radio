@@ -8,10 +8,11 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { LANGUAGES, STATUSES } from '@/lib/constants'
+import { useSpeakerStore } from '@/lib/use-speaker-store'
 import { cn } from '@/lib/utils'
 import { useWebSocketStore } from '@/lib/web-socket-store'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { FaChevronLeft } from 'react-icons/fa'
 import { FaMicrophone, FaUser } from 'react-icons/fa6'
 
@@ -23,82 +24,19 @@ function RouteComponent() {
   const { language } = Route.useParams()
   const languageName = LANGUAGES.find((l) => l.code === language)?.name
 
-  const [isBroadcasting, setIsBroadcasting] = useState(false)
-  const [stream, setStream] = useState<MediaStream | null>(null)
   const [participantCount, setParticipantCount] = useState(0)
 
-  const peerConnectionRef = useRef<RTCPeerConnection | null>(null)
-  const answerReceivedRef = useRef(false)
-  const iceCandidatesRef = useRef<RTCIceCandidateInit[]>([])
-  const analyserRef = useRef<number | null>(null)
+  const { connect, disconnect, status, setMessageHandler } = useWebSocketStore()
 
-  const { connect, disconnect, status, setMessageHandler, sendMessage } =
-    useWebSocketStore()
-
-  // Handle microphone access
-  const toggleBroadcast = async () => {
-    if (isBroadcasting) {
-      console.log('broadcast stopping')
-      // Stop recording
-      if (stream) {
-        stream.getTracks().forEach((track) => track.stop())
-        setStream(null)
-      }
-      peerConnectionRef.current?.close()
-      peerConnectionRef.current = null
-      clearInterval(analyserRef.current as number)
-      sendMessage({ type: 'broadcast-stopped' })
-      answerReceivedRef.current = false
-      setIsBroadcasting(false)
-    } else {
-      if (status !== 'online') {
-        return
-      }
-      console.log('broadcast starting')
-      setIsBroadcasting(true)
-      try {
-        sendMessage({ type: 'broadcast-started' })
-        const pc = new RTCPeerConnection({
-          iceServers: [],
-        })
-        peerConnectionRef.current = pc
-        pc.onicecandidate = (event) => {
-          if (event.candidate) {
-            sendMessage({ type: 'ice', data: event.candidate })
-          }
-        }
-        // Start recording
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
-        })
-        stream.getTracks().forEach((track) => pc.addTrack(track, stream))
-        setStream(stream)
-
-        const offer = await pc.createOffer()
-        await pc.setLocalDescription(offer)
-        sendMessage({ type: 'offer', data: offer })
-      } catch (error) {
-        console.error('Error accessing microphone:', error)
-        setIsBroadcasting(false)
-      }
-    }
-  }
+  const { isBroadcasting, toggleBroadcast, acceptOffer, addIceCandidate } =
+    useSpeakerStore()
 
   const handleMessage = useCallback(async (event: MessageEvent) => {
     const msg = JSON.parse(event.data)
     if (msg.type === 'answer') {
-      const answer = new RTCSessionDescription(msg.data)
-      await peerConnectionRef.current?.setRemoteDescription(answer)
-      answerReceivedRef.current = true
+      await acceptOffer(msg.data)
     } else if (msg.type === 'ice') {
-      iceCandidatesRef.current.push(msg.data)
-      if (!answerReceivedRef.current) return
-      for (const candidate of iceCandidatesRef.current) {
-        await peerConnectionRef.current?.addIceCandidate(
-          new RTCIceCandidate(candidate),
-        )
-      }
-      iceCandidatesRef.current = []
+      await addIceCandidate(msg.data)
     } else if (msg.type === 'participant-count') {
       setParticipantCount(msg.data)
     }

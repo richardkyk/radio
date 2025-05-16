@@ -51,7 +51,6 @@ export const useWebSocketStore = create<WebSocketState>((set, get) => ({
 
   disconnect: () => {
     const ws = get().ws
-    console.log('disconnecting from', ws?.readyState, WebSocket.CONNECTING)
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: `participant-disconnected` }))
       ws.close()
