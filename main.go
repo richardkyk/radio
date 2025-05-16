@@ -180,8 +180,9 @@ func main() {
 	engine.GET("/api/speaker", gin.WrapF(handleSpeakerWS))
 	engine.GET("/api/listener", gin.WrapF(handleListenerWS))
 
-	staticHandler(engine)
-	engine.RunTLS(":443", ".cert/cert.pem", ".cert/key.pem")
+	engine.Run(":80")
+	// staticHandler(engine)
+	// engine.RunTLS(":443", ".cert/cert.pem", ".cert/key.pem")
 }
 
 func staticHandler(engine *gin.Engine) {
