@@ -9,11 +9,11 @@ import {
 } from '@/components/ui/card'
 import { LANGUAGES, STATUSES } from '@/lib/constants'
 import { cn } from '@/lib/utils'
+import { useWebSocketStore } from '@/lib/web-socket-store'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { FaChevronLeft } from 'react-icons/fa'
 import { FaMicrophone, FaUser } from 'react-icons/fa6'
-import { toast } from 'sonner'
 
 export const Route = createFileRoute('/speaker_/$language')({
   component: RouteComponent,
@@ -25,14 +25,15 @@ function RouteComponent() {
 
   const [isBroadcasting, setIsBroadcasting] = useState(false)
   const [stream, setStream] = useState<MediaStream | null>(null)
-  const [status, setStatus] = useState<string>('idle')
   const [participantCount, setParticipantCount] = useState(0)
 
-  const webSocketRef = useRef<WebSocket | null>(null)
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null)
   const answerReceivedRef = useRef(false)
   const iceCandidatesRef = useRef<RTCIceCandidateInit[]>([])
   const analyserRef = useRef<number | null>(null)
+
+  const { connect, disconnect, status, setMessageHandler, sendMessage } =
+    useWebSocketStore()
 
   // Handle microphone access
   const toggleBroadcast = async () => {
@@ -46,32 +47,24 @@ function RouteComponent() {
       peerConnectionRef.current?.close()
       peerConnectionRef.current = null
       clearInterval(analyserRef.current as number)
-      webSocketRef.current?.send(JSON.stringify({ type: 'broadcast-stopped' }))
+      sendMessage({ type: 'broadcast-stopped' })
       answerReceivedRef.current = false
       setIsBroadcasting(false)
     } else {
-      if (!webSocketRef.current) {
-        toast.error('Connection error', {
-          description: 'Please refresh the page and try again',
-        })
-        setStatus('offline')
+      if (status !== 'online') {
         return
       }
       console.log('broadcast starting')
       setIsBroadcasting(true)
       try {
-        webSocketRef.current?.send(
-          JSON.stringify({ type: 'broadcast-started' }),
-        )
+        sendMessage({ type: 'broadcast-started' })
         const pc = new RTCPeerConnection({
           iceServers: [],
         })
         peerConnectionRef.current = pc
         pc.onicecandidate = (event) => {
           if (event.candidate) {
-            webSocketRef.current?.send(
-              JSON.stringify({ type: 'ice', data: event.candidate }),
-            )
+            sendMessage({ type: 'ice', data: event.candidate })
           }
         }
         // Start recording
@@ -81,36 +74,9 @@ function RouteComponent() {
         stream.getTracks().forEach((track) => pc.addTrack(track, stream))
         setStream(stream)
 
-        const audioContext = new AudioContext()
-        const source = audioContext.createMediaStreamSource(stream)
-        const analyser = audioContext.createAnalyser()
-        analyser.fftSize = 256
-
-        source.connect(analyser)
-        const dataArray = new Uint8Array(analyser.frequencyBinCount)
-
-        function checkAudioActivity() {
-          analyser.getByteTimeDomainData(dataArray)
-          const max = Math.max(...dataArray)
-          const min = Math.min(...dataArray)
-          const delta = max - min
-
-          if (delta > 5) {
-            console.log('🎙️ Audio activity detected')
-          } else {
-            console.log('🔇 Silence')
-          }
-        }
-
-        // Check periodically
-        analyserRef.current = setInterval(checkAudioActivity, 500)
-
         const offer = await pc.createOffer()
         await pc.setLocalDescription(offer)
-
-        webSocketRef.current?.send(
-          JSON.stringify({ type: 'offer', data: offer }),
-        )
+        sendMessage({ type: 'offer', data: offer })
       } catch (error) {
         console.error('Error accessing microphone:', error)
         setIsBroadcasting(false)
@@ -118,59 +84,37 @@ function RouteComponent() {
     }
   }
 
-  // handle websocket
+  const handleMessage = useCallback(async (event: MessageEvent) => {
+    const msg = JSON.parse(event.data)
+    if (msg.type === 'answer') {
+      const answer = new RTCSessionDescription(msg.data)
+      await peerConnectionRef.current?.setRemoteDescription(answer)
+      answerReceivedRef.current = true
+    } else if (msg.type === 'ice') {
+      iceCandidatesRef.current.push(msg.data)
+      if (!answerReceivedRef.current) return
+      for (const candidate of iceCandidatesRef.current) {
+        await peerConnectionRef.current?.addIceCandidate(
+          new RTCIceCandidate(candidate),
+        )
+      }
+      iceCandidatesRef.current = []
+    } else if (msg.type === 'participant-count') {
+      setParticipantCount(msg.data)
+    }
+  }, [])
+
   useEffect(() => {
-    if (webSocketRef.current) return
     const wsUrl = new URL(
       `${import.meta.env.VITE_WS_URL}/speaker?topic=${language}`,
     )
-    const ws = new WebSocket(wsUrl)
-    webSocketRef.current = ws
+    connect(wsUrl.toString())
+    setMessageHandler(handleMessage)
 
-    ws.onmessage = async (event) => {
-      const msg = JSON.parse(event.data)
-      if (msg.type === 'answer') {
-        const answer = new RTCSessionDescription(msg.data)
-        await peerConnectionRef.current?.setRemoteDescription(answer)
-        answerReceivedRef.current = true
-      } else if (msg.type === 'ice') {
-        iceCandidatesRef.current.push(msg.data)
-        if (!answerReceivedRef.current) return
-        for (const candidate of iceCandidatesRef.current) {
-          await peerConnectionRef.current?.addIceCandidate(
-            new RTCIceCandidate(candidate),
-          )
-        }
-        iceCandidatesRef.current = []
-      } else if (msg.type === 'participant-count') {
-        setParticipantCount(msg.data)
-      }
-    }
-    ws.onopen = async () => {
-      console.log('websocket opened')
-      ws.send(JSON.stringify({ type: 'speaker-connected' }))
-      setStatus('online')
-    }
-    ws.onerror = (event) => {
-      if (event.target !== webSocketRef.current) return
-      console.log('websocket error', event)
-      webSocketRef.current = null
-      answerReceivedRef.current = false
-      setStatus('offline')
-      toast.error('Connection error', {
-        description: 'Please refresh the page and try again',
-      })
-    }
     return () => {
-      console.log('websocket closed')
-      webSocketRef.current = null
-      setStatus('idle')
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'speaker-disconnected' }))
-      }
-      ws.close()
+      disconnect()
     }
-  }, [language])
+  }, [connect, handleMessage, disconnect, setMessageHandler])
 
   useEffect(() => {
     document.title = `Speaking to ${languageName} Room`

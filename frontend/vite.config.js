@@ -16,12 +16,12 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
   },
-  server: {
-    https: {
-      key: resolve(__dirname, '../.cert/key.pem'),
-      cert: resolve(__dirname, '../.cert/cert.pem'),
-    },
-  },
+  // server: {
+  //   https: {
+  //     key: resolve(__dirname, '../.cert/key.pem'),
+  //     cert: resolve(__dirname, '../.cert/cert.pem'),
+  //   },
+  // },
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),

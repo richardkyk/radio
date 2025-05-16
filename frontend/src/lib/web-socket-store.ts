@@ -1,0 +1,74 @@
+import { create } from 'zustand'
+import { toast } from 'sonner'
+
+type MessageHandler = (event: MessageEvent, ws: WebSocket) => void
+
+interface WebSocketState {
+  status: 'idle' | 'online' | 'offline'
+  ws: WebSocket | null
+  connect: (url: string) => void
+  disconnect: () => void
+  sendMessage: (data: any) => void
+  setMessageHandler: (handler: MessageHandler) => void
+  wsUrl: string | null
+  messageHandler: MessageHandler | null
+}
+
+export const useWebSocketStore = create<WebSocketState>((set, get) => ({
+  status: 'idle',
+  ws: null,
+  wsUrl: null,
+  messageHandler: null,
+
+  connect: (url: string) => {
+    if (get().ws) return
+
+    const ws = new WebSocket(url)
+
+    ws.onopen = () => {
+      set({ status: 'online', ws, wsUrl: url })
+      ws.send(JSON.stringify({ type: `participant-connected` }))
+    }
+
+    ws.onmessage = (event) => {
+      const handler = get().messageHandler
+      if (handler) handler(event, ws)
+    }
+
+    ws.onerror = () => {
+      set({ status: 'offline' })
+      toast.error('Connection error', {
+        description: 'Please refresh the page and try again',
+      })
+    }
+
+    ws.onclose = () => {
+      set({ status: 'idle', ws: null, wsUrl: null })
+    }
+
+    set({ ws })
+  },
+
+  disconnect: () => {
+    const ws = get().ws
+    console.log('disconnecting from', ws?.readyState, WebSocket.CONNECTING)
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: `participant-disconnected` }))
+      ws.close()
+      set({ ws: null, status: 'idle', wsUrl: null })
+    }
+  },
+
+  sendMessage: (data: any) => {
+    const ws = get().ws
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(data))
+    } else {
+      console.warn('WebSocket is not open')
+    }
+  },
+
+  setMessageHandler: (handler: MessageHandler) => {
+    set({ messageHandler: handler })
+  },
+}))
