@@ -2,31 +2,31 @@ import { create } from 'zustand'
 import { useWebSocketStore } from './web-socket-store'
 
 interface SpeakerState {
-  isBroadcasting: boolean
+  isActive: boolean
   stream: MediaStream | null
   pc: RTCPeerConnection | null
   answerReceived: boolean
   iceCandidates: RTCIceCandidateInit[]
   start: () => Promise<void>
   stop: () => void
-  toggleBroadcast: () => void
+  toggle: () => void
   acceptOffer: (data: RTCSessionDescriptionInit) => Promise<void>
   addIceCandidate: (candidate: RTCIceCandidateInit) => Promise<void>
 }
 
 export const useSpeakerStore = create<SpeakerState>((set, get) => ({
-  isBroadcasting: false,
+  isActive: false,
   stream: null,
   pc: null,
   answerReceived: false,
   iceCandidates: [],
 
   start: async () => {
-    if (get().isBroadcasting) return
+    if (get().isActive) return
     console.log('broadcast starting')
 
     const sendMessage = useWebSocketStore.getState().sendMessage
-    set({ isBroadcasting: true })
+    set({ isActive: true })
     try {
       sendMessage({ type: 'broadcast-started' })
       const pc = new RTCPeerConnection({
@@ -48,12 +48,12 @@ export const useSpeakerStore = create<SpeakerState>((set, get) => ({
       sendMessage({ type: 'offer', data: offer })
     } catch (error) {
       console.error('Error accessing microphone:', error)
-      set({ isBroadcasting: false })
+      set({ isActive: false })
     }
   },
 
   stop: () => {
-    if (!get().isBroadcasting) return
+    if (!get().isActive) return
     console.log('broadcast stopping')
 
     const sendMessage = useWebSocketStore.getState().sendMessage
@@ -69,10 +69,10 @@ export const useSpeakerStore = create<SpeakerState>((set, get) => ({
       set({ pc: null })
     }
     sendMessage({ type: 'broadcast-stopped' })
-    set({ isBroadcasting: false, answerReceived: false })
+    set({ isActive: false, answerReceived: false })
   },
-  toggleBroadcast: () => {
-    if (get().isBroadcasting) {
+  toggle: () => {
+    if (get().isActive) {
       get().stop()
     } else {
       get().start()

@@ -28,8 +28,7 @@ function RouteComponent() {
 
   const { connect, disconnect, status, setMessageHandler } = useWebSocketStore()
 
-  const { isBroadcasting, toggleBroadcast, acceptOffer, addIceCandidate } =
-    useSpeakerStore()
+  const { isActive, toggle, acceptOffer, addIceCandidate } = useSpeakerStore()
 
   const handleMessage = useCallback(async (event: MessageEvent) => {
     const msg = JSON.parse(event.data)
@@ -107,21 +106,21 @@ function RouteComponent() {
           </CardHeader>
           <CardContent className="flex flex-col items-center">
             <div
-              className={`p-8 rounded-full relative mb-4 transition-colors ${isBroadcasting ? 'bg-red-100' : 'bg-gray-100'}`}
+              className={`p-8 rounded-full relative mb-4 transition-colors ${isActive ? 'bg-red-100' : 'bg-gray-100'}`}
             >
               <Button
                 disabled={status === 'offline'}
-                variant={isBroadcasting ? 'destructive' : 'default'}
+                variant={isActive ? 'destructive' : 'default'}
                 size="icon"
                 className={cn(
                   'size-16 rounded-full ',
-                  isBroadcasting && 'animate-pulse',
+                  isActive && 'animate-pulse',
                 )}
-                onClick={toggleBroadcast}
+                onClick={toggle}
               >
                 <div className="absolute inset-0"></div>
 
-                {isBroadcasting ? (
+                {isActive ? (
                   <FaMicrophone className="size-8" />
                 ) : (
                   <FaMicrophone className="size-8" />
@@ -133,7 +132,7 @@ function RouteComponent() {
                 <div className="text-red-500 font-medium">
                   Check your connection
                 </div>
-              ) : isBroadcasting ? (
+              ) : isActive ? (
                 <div className="text-red-500 font-medium">
                   Broadcasting... Tap to stop
                 </div>
