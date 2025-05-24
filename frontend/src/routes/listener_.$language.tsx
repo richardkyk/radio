@@ -28,6 +28,7 @@ function RouteComponent() {
   const [participantCount, setParticipantCount] = useState(0)
 
   const audioElementRef = useRef<HTMLAudioElement>(null)
+  const videoElementRef = useRef<HTMLVideoElement>(null)
 
   const { connect, disconnect, status, setMessageHandler } = useWebSocketStore()
 
@@ -39,6 +40,7 @@ function RouteComponent() {
     acceptOffer,
     addIceCandidate,
     setAudioElement,
+    setVideoElement,
   } = useListenerStore()
 
   const handleMessage = useCallback(async (event: MessageEvent) => {
@@ -58,6 +60,7 @@ function RouteComponent() {
 
   useEffect(() => {
     setAudioElement(audioElementRef.current)
+    setVideoElement(videoElementRef.current)
     document.title = `Listening to ${languageName} Room`
   }, [languageName])
 
@@ -140,7 +143,7 @@ function RouteComponent() {
                 )}
               </Button>
             </div>
-            <div className="text-center mb-4">
+            <div className="text-center">
               {isActive ? (
                 <div className="text-green-600 font-medium">
                   Listening... Tap to pause
@@ -152,12 +155,17 @@ function RouteComponent() {
           </CardContent>
         </Card>
 
-        <audio
-          ref={audioElementRef}
-          controls
+        <audio ref={audioElementRef} controls autoPlay className="hidden" />
+
+        <video
+          ref={videoElementRef}
           autoPlay
-          className="hidden"
-        ></audio>
+          controls
+          muted
+          playsInline
+          width="400"
+          height="200"
+        ></video>
 
         {participantCount <= 1 && (
           <div className="text-sm text-gray-500 text-center">

@@ -1,17 +1,28 @@
 import { create } from 'zustand'
 import { useWebSocketStore } from './web-socket-store'
 
+declare global {
+  interface RTCRtpSender {
+    createEncodedStreams(): {
+      readable: ReadableStream<RTCEncodedVideoFrame | RTCEncodedAudioFrame>
+      writable: WritableStream<RTCEncodedVideoFrame | RTCEncodedAudioFrame>
+    }
+  }
+}
+
 interface SpeakerState {
   isActive: boolean
   stream: MediaStream | null
   pc: RTCPeerConnection | null
   answerReceived: boolean
   iceCandidates: Array<RTCIceCandidateInit>
+  videoElement: HTMLCanvasElement | null
   start: () => Promise<void>
   stop: () => void
   toggle: () => void
   acceptOffer: (data: RTCSessionDescriptionInit) => Promise<void>
   addIceCandidate: (candidate: RTCIceCandidateInit) => Promise<void>
+  setVideoElement: (element: HTMLCanvasElement | null) => void
 }
 
 export const useSpeakerStore = create<SpeakerState>((set, get) => ({
@@ -20,6 +31,7 @@ export const useSpeakerStore = create<SpeakerState>((set, get) => ({
   pc: null,
   answerReceived: false,
   iceCandidates: [],
+  videoElement: null,
 
   start: async () => {
     if (get().isActive) return
@@ -38,16 +50,43 @@ export const useSpeakerStore = create<SpeakerState>((set, get) => ({
           sendMessage({ type: 'ice', data: event.candidate })
         }
       }
-      const currentStream = await navigator.mediaDevices.getUserMedia({
+      const audioStream = await navigator.mediaDevices.getUserMedia({
         audio: true,
       })
-      currentStream
-        .getTracks()
-        .forEach((track) => pc.addTrack(track, currentStream))
+      const audioTrack = audioStream.getAudioTracks()[0]
+      pc.addTrack(audioTrack, audioStream)
+
+      const videoElement = get().videoElement
+      if (videoElement) {
+        const videoStream = videoElement.captureStream()
+        const videoTrack = videoStream.getVideoTracks()[0]
+        console.log('videoTrack', videoTrack)
+        const dummyStream = new MediaStream([videoTrack])
+        pc.addTrack(videoTrack, dummyStream)
+        // const sender = pc.addTrack(videoTrack, dummyStream)
+        //
+        // const { readable, writable } = sender.createEncodedStreams()
+        // const transformStream = new TransformStream({
+        //   async transform(encodedFrame, controller) {
+        //     const timestamp = BigInt(Date.now()) * 1_000_000n
+        //     const meta = new Uint8Array(8)
+        //     new DataView(meta.buffer).setBigUint64(0, timestamp, false)
+        //
+        //     const newData = new Uint8Array(
+        //       meta.length + encodedFrame.data.byteLength,
+        //     )
+        //     newData.set(meta)
+        //     newData.set(new Uint8Array(encodedFrame.data), meta.length)
+        //     encodedFrame.data = newData.buffer
+        //     controller.enqueue(encodedFrame)
+        //   },
+        // })
+        // readable.pipeThrough(transformStream).pipeTo(writable)
+      }
 
       const offer = await pc.createOffer()
       await pc.setLocalDescription(offer)
-      set({ stream: currentStream })
+      set({ stream: audioStream })
       sendMessage({ type: 'offer', data: offer })
     } catch (error) {
       console.error('Error accessing microphone:', error)
@@ -98,5 +137,8 @@ export const useSpeakerStore = create<SpeakerState>((set, get) => ({
       await pc.addIceCandidate(new RTCIceCandidate(c))
     }
     set({ iceCandidates: [] })
+  },
+  setVideoElement: (element: HTMLCanvasElement | null) => {
+    set({ videoElement: element })
   },
 }))

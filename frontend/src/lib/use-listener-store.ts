@@ -2,13 +2,16 @@ import { create } from 'zustand'
 import { useWebSocketStore } from './web-socket-store'
 
 interface ListenerState {
+  audioStream: MediaStream
+  videoStream: MediaStream
   audioElement: HTMLAudioElement | null
+  videoElement: HTMLVideoElement | null
   isActive: boolean
-  stream: MediaStream
   pc: RTCPeerConnection | null
   answerReceived: boolean
   iceCandidates: Array<RTCIceCandidateInit>
   setAudioElement: (element: HTMLAudioElement | null) => void
+  setVideoElement: (element: HTMLVideoElement | null) => void
   start: () => void
   stop: () => void
   toggle: () => void
@@ -17,15 +20,22 @@ interface ListenerState {
 }
 
 export const useListenerStore = create<ListenerState>((set, get) => ({
+  audioStream: new MediaStream(),
+  videoStream: new MediaStream(),
   audioElement: null,
+  videoElement: null,
   isActive: false,
-  stream: new MediaStream(),
   pc: null,
   answerReceived: false,
   iceCandidates: [],
 
-  setAudioElement: (element: HTMLAudioElement | null) => {
-    set({ audioElement: element })
+  setAudioElement: (audioElement: HTMLAudioElement | null) => {
+    if (audioElement) audioElement.srcObject = get().audioStream
+    set({ audioElement })
+  },
+  setVideoElement: (videoElement: HTMLVideoElement | null) => {
+    if (videoElement) videoElement.srcObject = get().videoStream
+    set({ videoElement })
   },
   start: () => {
     if (get().isActive) return
@@ -44,29 +54,45 @@ export const useListenerStore = create<ListenerState>((set, get) => ({
           sendMessage({ type: 'ice', data: event.candidate })
         }
       }
-      pc.ontrack = (event) => {
+      pc.ontrack = async (event) => {
         const audioElement = get().audioElement
         if (!audioElement) return
+        if (event.track.kind === 'audio') {
+          const remoteStream = event.streams[0]
+          const streamId = remoteStream.id
 
-        if (event.track.kind !== 'audio') return
+          console.log('audioStream', streamId)
+          if (streamId.includes('server')) return
 
-        const remoteStream = event.streams[0]
-        const streamId = remoteStream.id
+          const audioStream = get().audioStream
+          remoteStream
+            .getTracks()
+            .forEach((track) => audioStream.addTrack(track))
 
-        if (streamId.includes('server')) return
-
-        const currentStream = get().stream
-        remoteStream
-          .getTracks()
-          .forEach((track) => currentStream.addTrack(track))
-
-        if (!audioElement.srcObject) {
-          console.log('setting audio src')
-          audioElement.srcObject = currentStream
           audioElement
             .play()
             .then(() => console.log('Playing audio'))
             .catch((err) => console.error('Error playing audio:', err))
+        }
+
+        const videoElement = get().videoElement
+        if (!videoElement) return
+        if (event.track.kind === 'video') {
+          const remoteStream = event.streams[0]
+          const streamId = remoteStream.id
+
+          console.log('videoStream', streamId)
+          if (streamId.includes('server')) return
+
+          const videoStream = get().videoStream
+          remoteStream
+            .getTracks()
+            .forEach((track) => videoStream.addTrack(track))
+
+          videoElement
+            .play()
+            .then(() => console.log('Playing video'))
+            .catch((err) => console.error('Error playing video:', err))
         }
       }
     } catch (error) {
@@ -80,14 +106,15 @@ export const useListenerStore = create<ListenerState>((set, get) => ({
     console.log('listening stopping')
 
     const sendMessage = useWebSocketStore.getState().sendMessage
-    const audioElement = get().audioElement
-    if (audioElement) {
-      audioElement.srcObject = null
-    }
-    const currentStream = get().stream
-    currentStream.getTracks().forEach((track) => {
+    const audioStream = get().audioStream
+    audioStream.getTracks().forEach((track) => {
       track.stop()
-      currentStream.removeTrack(track)
+      audioStream.removeTrack(track)
+    })
+    const videoStream = get().videoStream
+    videoStream.getTracks().forEach((track) => {
+      track.stop()
+      videoStream.removeTrack(track)
     })
 
     const pc = get().pc

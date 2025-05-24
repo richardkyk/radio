@@ -1,5 +1,5 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { FaChevronLeft } from 'react-icons/fa'
 import { FaMicrophone, FaUser } from 'react-icons/fa6'
 import { Badge } from '@/components/ui/badge'
@@ -24,11 +24,13 @@ function RouteComponent() {
   const { language } = Route.useParams()
   const languageName = LANGUAGES.find((l) => l.code === language)?.name
 
+  const canvasRef = useRef<HTMLCanvasElement>(null)
   const [participantCount, setParticipantCount] = useState(0)
 
   const { connect, disconnect, status, setMessageHandler } = useWebSocketStore()
 
-  const { isActive, toggle, acceptOffer, addIceCandidate } = useSpeakerStore()
+  const { isActive, toggle, acceptOffer, addIceCandidate, setVideoElement } =
+    useSpeakerStore()
 
   const handleMessage = useCallback(async (event: MessageEvent) => {
     const msg = JSON.parse(event.data)
@@ -54,7 +56,19 @@ function RouteComponent() {
   }, [connect, handleMessage, disconnect, setMessageHandler])
 
   useEffect(() => {
-    document.title = `Speaking to ${languageName} Room`
+    setVideoElement(canvasRef.current)
+    function render() {
+      if (!canvasRef.current) return
+      const canvas = canvasRef.current
+      if (!canvas) return
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      ctx.fillStyle = 'red'
+      ctx.fillRect(Math.random() * 350, Math.random() * 150, 50, 50)
+    }
+    const id = setInterval(render, 1000)
+    return () => clearInterval(id)
   }, [languageName])
 
   return (
@@ -142,6 +156,8 @@ function RouteComponent() {
             </div>
           </CardContent>
         </Card>
+
+        <canvas ref={canvasRef} width="400" height="200"></canvas>
 
         <div className="text-sm text-gray-500 text-center">
           Remember to speak clearly and at a moderate pace for the best results.

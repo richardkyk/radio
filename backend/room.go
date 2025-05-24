@@ -28,7 +28,8 @@ type Room struct {
 	speakers     []*Speaker
 	listeners    []*Listener
 	participants []*Participant
-	tracks       map[ParticipantID][]*webrtc.TrackLocalStaticRTP
+	audioTracks  map[ParticipantID][]*webrtc.TrackLocalStaticRTP
+	videoTracks  map[ParticipantID][]*webrtc.TrackLocalStaticRTP
 }
 
 type Participant struct {
@@ -75,17 +76,32 @@ func (s *Speaker) CreatePeerConnection() error {
 		if track.Kind() == webrtc.RTPCodecTypeAudio {
 			go s.Room.RelayAudioToListeners(track, s.Id)
 		}
+		if track.Kind() == webrtc.RTPCodecTypeVideo {
+			go s.Room.RelayVideoToListeners(track, s.Id)
+		}
 	})
 
 	// loop through all the listeners and add a new audio track if it doesn't exist
 	for _, listener := range s.Room.listeners {
-		streamId := fmt.Sprintf("%s:%s", s.Id, listener.Id)
+		streamId := fmt.Sprintf("%s:%s:%s", "audio", s.Id, listener.Id)
 		audioTrack, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus}, "audio", streamId)
-		_, err = listener.Pc.AddTrack(audioTrack)
 		if err != nil {
 			log.Println("Failed to create audio track:", err)
 		}
-		s.Room.tracks[ParticipantID(s.Id)] = append(s.Room.tracks[ParticipantID(s.Id)], audioTrack)
+		if _, err = listener.Pc.AddTrack(audioTrack); err != nil {
+			log.Println("Failed to add audio track:", err)
+		}
+		s.Room.audioTracks[ParticipantID(s.Id)] = append(s.Room.audioTracks[ParticipantID(s.Id)], audioTrack)
+
+		streamId = fmt.Sprintf("%s:%s:%s", "video", s.Id, listener.Id)
+		videoTrack, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, "video", streamId)
+		if err != nil {
+			log.Println("Failed to create video track:", err)
+		}
+		if _, err = listener.Pc.AddTrack(videoTrack); err != nil {
+			log.Println("Failed to add video track:", err)
+		}
+		s.Room.videoTracks[ParticipantID(s.Id)] = append(s.Room.videoTracks[ParticipantID(s.Id)], videoTrack)
 	}
 
 	return nil
@@ -157,13 +173,25 @@ func (l *Listener) CreatePeerConnection() error {
 	}
 
 	for _, speakerId := range speakerIds {
-		streamId := fmt.Sprintf("%s:%s", speakerId, l.Id)
+		streamId := fmt.Sprintf("%s:%s:%s", "audio", speakerId, l.Id)
 		audioTrack, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus}, "audio", streamId)
-		_, err = pc.AddTrack(audioTrack)
 		if err != nil {
 			log.Println("Failed to create audio track:", err)
 		}
-		l.Room.tracks[ParticipantID(speakerId)] = append(l.Room.tracks[ParticipantID(speakerId)], audioTrack)
+		if _, err = pc.AddTrack(audioTrack); err != nil {
+			log.Println("Failed to add audio track:", err)
+		}
+		l.Room.audioTracks[ParticipantID(speakerId)] = append(l.Room.audioTracks[ParticipantID(speakerId)], audioTrack)
+
+		streamId = fmt.Sprintf("%s:%s:%s", "video", speakerId, l.Id)
+		videoTrack, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, "video", streamId)
+		if err != nil {
+			log.Println("Failed to create audio track:", err)
+		}
+		if _, err = pc.AddTrack(videoTrack); err != nil {
+			log.Println("Failed to add video track:", err)
+		}
+		l.Room.videoTracks[ParticipantID(speakerId)] = append(l.Room.videoTracks[ParticipantID(speakerId)], videoTrack)
 	}
 
 	offer, err := pc.CreateOffer(nil)
@@ -280,7 +308,8 @@ func (r *Room) RemoveSpeaker(participantId ParticipantID) {
 }
 
 func (r *Room) RemoveSpeakerTracks(participantId ParticipantID) {
-	delete(r.tracks, participantId)
+	delete(r.audioTracks, participantId)
+	delete(r.videoTracks, participantId)
 }
 
 func (r *Room) RemoveListener(participantId ParticipantID) {
@@ -317,16 +346,28 @@ func (r *Room) RemoveListenerTracks(participantId ParticipantID) {
 	}
 
 	for _, speakerId := range speakerIds {
-		var filteredTracks []*webrtc.TrackLocalStaticRTP
-		for _, t := range r.tracks[ParticipantID(speakerId)] {
+		var filteredAudioTracks []*webrtc.TrackLocalStaticRTP
+		for _, t := range r.audioTracks[ParticipantID(speakerId)] {
 			for _, listener := range r.listeners {
-				streamId := fmt.Sprintf("%s:%s", speakerId, listener.Id)
+				streamId := fmt.Sprintf("%s:%s:%s", "audio", speakerId, listener.Id)
 				if t.StreamID() == streamId {
-					filteredTracks = append(filteredTracks, t)
+					filteredAudioTracks = append(filteredAudioTracks, t)
 				}
 			}
 		}
-		r.tracks[ParticipantID(speakerId)] = filteredTracks
+		r.audioTracks[ParticipantID(speakerId)] = filteredAudioTracks
+
+		var filteredVideoTracks []*webrtc.TrackLocalStaticRTP
+		for _, t := range r.videoTracks[ParticipantID(speakerId)] {
+			for _, listener := range r.listeners {
+				streamId := fmt.Sprintf("%s:%s:%s", "video", speakerId, listener.Id)
+				if t.StreamID() == streamId {
+					filteredVideoTracks = append(filteredVideoTracks, t)
+				}
+			}
+		}
+		r.videoTracks[ParticipantID(speakerId)] = filteredVideoTracks
+
 	}
 }
 
@@ -342,8 +383,6 @@ func (r *Room) NotifyParticipants(payload Signal) {
 
 func (r *Room) RelayAudioToListeners(remote *webrtc.TrackRemote, participantId ParticipantID) {
 	for {
-		// start := time.Now()
-		// Read audio data from the speaker's track
 		packet, _, err := remote.ReadRTP()
 		if err != nil {
 			if (err == io.EOF) || (err == io.ErrClosedPipe) {
@@ -354,23 +393,42 @@ func (r *Room) RelayAudioToListeners(remote *webrtc.TrackRemote, participantId P
 			continue
 		}
 
-		// elapsed := time.Since(start)
-		// log.Printf("Read %d bytes in (%s)\n", len(packet.Payload), elapsed)
-
-		// Relay the audio packet to all listeners
-		// start = time.Now()
-		for _, t := range r.tracks[participantId] {
-			// Write the RTP packet to the listener's track
+		for _, t := range r.audioTracks[participantId] {
 			_ = t.WriteRTP(packet)
 		}
-		// elapsed = time.Since(start)
-		// log.Printf("Relayed %d bytes to %d listeners (%s)\n", len(packet.Payload), len(r.tracks[speakerId]), elapsed)
+	}
+}
+
+func (r *Room) RelayVideoToListeners(remote *webrtc.TrackRemote, participantId ParticipantID) {
+	for {
+		packet, _, err := remote.ReadRTP()
+		if err != nil {
+			if (err == io.EOF) || (err == io.ErrClosedPipe) {
+				log.Println("Speaker track closed")
+				break
+			}
+			log.Println("Error reading from remote track:", err)
+			continue
+		}
+
+		if len(packet.Payload) < 12 {
+			continue // Not enough data for timestamp
+		}
+
+		// timestamp := binary.BigEndian.Uint64(packet.Payload[4:12])
+		// metadata := time.Unix(0, int64(timestamp)) // Convert to time.Time if needed
+		// fmt.Println("Received metadata timestamp:", metadata)
+
+		fmt.Println("Writing RTP packet to video track", len(packet.Payload))
+		for _, t := range r.videoTracks[participantId] {
+			_ = t.WriteRTP(packet)
+		}
 	}
 }
 
 func (r *Room) GetStats() {
 	fmt.Printf("Participants: %d, Speakers: %d, Listeners: %d\n", len(r.participants), len(r.speakers), len(r.listeners))
-	for speakerID, trackList := range r.tracks {
+	for speakerID, trackList := range r.audioTracks {
 		fmt.Printf("SpeakerID: %s\n", speakerID)
 		for i, track := range trackList {
 			if track != nil {
@@ -387,10 +445,11 @@ func GetOrCreateRoom(topic string) *Room {
 	room, exists := rooms[topic]
 	if !exists {
 		room = &Room{
-			id:        topic,
-			speakers:  make([]*Speaker, 0),
-			listeners: make([]*Listener, 0),
-			tracks:    make(map[ParticipantID][]*webrtc.TrackLocalStaticRTP),
+			id:          topic,
+			speakers:    make([]*Speaker, 0),
+			listeners:   make([]*Listener, 0),
+			audioTracks: make(map[ParticipantID][]*webrtc.TrackLocalStaticRTP),
+			videoTracks: make(map[ParticipantID][]*webrtc.TrackLocalStaticRTP),
 		}
 		rooms[topic] = room
 	}
