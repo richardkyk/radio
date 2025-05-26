@@ -15,6 +15,7 @@ import { LANGUAGES, STATUSES } from '@/lib/constants'
 import { useSpeakerStore } from '@/lib/use-speaker-store'
 import { cn } from '@/lib/utils'
 import { useWebSocketStore } from '@/lib/web-socket-store'
+import QRCode from 'qrcode'
 
 export const Route = createFileRoute('/speaker_/$language')({
   component: RouteComponent,
@@ -64,10 +65,24 @@ function RouteComponent() {
       const ctx = canvas.getContext('2d')
       if (!ctx) return
       ctx.clearRect(0, 0, canvas.width, canvas.height)
-      ctx.fillStyle = 'red'
-      ctx.fillRect(Math.random() * 350, Math.random() * 150, 50, 50)
+
+      const timestamp = Date.now().toString()
+      console.log('timestamp', timestamp)
+      QRCode.toCanvas(
+        canvas,
+        timestamp,
+        {
+          errorCorrectionLevel: 'H',
+          margin: 0,
+          scale: 4,
+        },
+        (err) => {
+          if (err) console.error(err)
+          ctx.drawImage(canvas, 0, 0)
+        },
+      )
     }
-    const id = setInterval(render, 1000)
+    const id = setInterval(render, 3000)
     return () => clearInterval(id)
   }, [languageName])
 
@@ -157,7 +172,7 @@ function RouteComponent() {
           </CardContent>
         </Card>
 
-        <canvas ref={canvasRef} width="400" height="200"></canvas>
+        <canvas ref={canvasRef} width="84" height="84"></canvas>
 
         <div className="text-sm text-gray-500 text-center">
           Remember to speak clearly and at a moderate pace for the best results.

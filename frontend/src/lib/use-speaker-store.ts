@@ -60,28 +60,8 @@ export const useSpeakerStore = create<SpeakerState>((set, get) => ({
       if (videoElement) {
         const videoStream = videoElement.captureStream()
         const videoTrack = videoStream.getVideoTracks()[0]
-        console.log('videoTrack', videoTrack)
         const dummyStream = new MediaStream([videoTrack])
         pc.addTrack(videoTrack, dummyStream)
-        // const sender = pc.addTrack(videoTrack, dummyStream)
-        //
-        // const { readable, writable } = sender.createEncodedStreams()
-        // const transformStream = new TransformStream({
-        //   async transform(encodedFrame, controller) {
-        //     const timestamp = BigInt(Date.now()) * 1_000_000n
-        //     const meta = new Uint8Array(8)
-        //     new DataView(meta.buffer).setBigUint64(0, timestamp, false)
-        //
-        //     const newData = new Uint8Array(
-        //       meta.length + encodedFrame.data.byteLength,
-        //     )
-        //     newData.set(meta)
-        //     newData.set(new Uint8Array(encodedFrame.data), meta.length)
-        //     encodedFrame.data = newData.buffer
-        //     controller.enqueue(encodedFrame)
-        //   },
-        // })
-        // readable.pipeThrough(transformStream).pipeTo(writable)
       }
 
       const offer = await pc.createOffer()

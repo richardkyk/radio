@@ -411,15 +411,6 @@ func (r *Room) RelayVideoToListeners(remote *webrtc.TrackRemote, participantId P
 			continue
 		}
 
-		if len(packet.Payload) < 12 {
-			continue // Not enough data for timestamp
-		}
-
-		// timestamp := binary.BigEndian.Uint64(packet.Payload[4:12])
-		// metadata := time.Unix(0, int64(timestamp)) // Convert to time.Time if needed
-		// fmt.Println("Received metadata timestamp:", metadata)
-
-		fmt.Println("Writing RTP packet to video track", len(packet.Payload))
 		for _, t := range r.videoTracks[participantId] {
 			_ = t.WriteRTP(packet)
 		}

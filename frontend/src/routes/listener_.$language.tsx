@@ -34,6 +34,7 @@ function RouteComponent() {
 
   const {
     isActive,
+    latency,
     start,
     stop,
     toggle,
@@ -117,6 +118,7 @@ function RouteComponent() {
                 ></div>
                 {STATUSES.find((s) => s.code === status)?.name}
               </Badge>
+              <div className="text-xs">{latency}ms</div>
             </div>
             <CardDescription>
               Listen to speakers in {languageName}. Audio will be translated in
@@ -160,11 +162,10 @@ function RouteComponent() {
         <video
           ref={videoElementRef}
           autoPlay
-          controls
           muted
           playsInline
-          width="400"
-          height="200"
+          width="84"
+          height="84"
         ></video>
 
         {participantCount <= 1 && (

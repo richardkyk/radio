@@ -1,5 +1,13 @@
 import { create } from 'zustand'
 import { useWebSocketStore } from './web-socket-store'
+import jsQR from 'jsqr'
+
+declare class MediaStreamTrackProcessor<
+  T extends MediaStreamTrack = MediaStreamTrack,
+> {
+  constructor(init: { track: T })
+  readonly readable: ReadableStream<VideoFrame>
+}
 
 interface ListenerState {
   audioStream: MediaStream
@@ -10,6 +18,7 @@ interface ListenerState {
   pc: RTCPeerConnection | null
   answerReceived: boolean
   iceCandidates: Array<RTCIceCandidateInit>
+  latency: number
   setAudioElement: (element: HTMLAudioElement | null) => void
   setVideoElement: (element: HTMLVideoElement | null) => void
   start: () => void
@@ -28,6 +37,7 @@ export const useListenerStore = create<ListenerState>((set, get) => ({
   pc: null,
   answerReceived: false,
   iceCandidates: [],
+  latency: 0,
 
   setAudioElement: (audioElement: HTMLAudioElement | null) => {
     if (audioElement) audioElement.srcObject = get().audioStream
@@ -93,6 +103,38 @@ export const useListenerStore = create<ListenerState>((set, get) => ({
             .play()
             .then(() => console.log('Playing video'))
             .catch((err) => console.error('Error playing video:', err))
+
+          const videoTrack = videoStream.getVideoTracks()[0]
+          const processor = new MediaStreamTrackProcessor({ track: videoTrack })
+          const reader = processor.readable.getReader()
+
+          async function processFrames() {
+            while (true) {
+              const { value: frame, done } = await reader.read()
+              if (done) break
+
+              const receivedAt = Date.now()
+              const width = frame.displayWidth
+              const height = frame.displayHeight
+              const buffer = new Uint8ClampedArray(width * height * 4) // RGBA
+
+              await frame.copyTo(buffer, {
+                layout: [{ offset: 0, stride: width * 4 }],
+                format: 'RGBA',
+              })
+              frame.close()
+
+              const qrResult = jsQR(buffer, width, height)
+              if (qrResult) {
+                const sentAt = new Date(parseInt(qrResult.data)).valueOf()
+                const latency = receivedAt - sentAt
+                set({ latency })
+                console.log(`Latency: ${latency}ms`)
+              }
+            }
+          }
+
+          processFrames()
         }
       }
     } catch (error) {
