@@ -18,7 +18,9 @@ interface ListenerState {
   pc: RTCPeerConnection | null
   answerReceived: boolean
   iceCandidates: Array<RTCIceCandidateInit>
+  frameTimestamps: Map<number, number>
   latency: number
+
   setAudioElement: (element: HTMLAudioElement | null) => void
   setVideoElement: (element: HTMLVideoElement | null) => void
   start: () => void
@@ -38,6 +40,7 @@ export const useListenerStore = create<ListenerState>((set, get) => ({
   answerReceived: false,
   iceCandidates: [],
   latency: 0,
+  frameTimestamps: new Map(),
 
   setAudioElement: (audioElement: HTMLAudioElement | null) => {
     if (audioElement) audioElement.srcObject = get().audioStream
@@ -79,10 +82,7 @@ export const useListenerStore = create<ListenerState>((set, get) => ({
             .getTracks()
             .forEach((track) => audioStream.addTrack(track))
 
-          audioElement
-            .play()
-            .then(() => console.log('Playing audio'))
-            .catch((err) => console.error('Error playing audio:', err))
+          await audioElement.play()
         }
 
         const videoElement = get().videoElement
@@ -99,42 +99,14 @@ export const useListenerStore = create<ListenerState>((set, get) => ({
             .getTracks()
             .forEach((track) => videoStream.addTrack(track))
 
-          videoElement
-            .play()
-            .then(() => console.log('Playing video'))
-            .catch((err) => console.error('Error playing video:', err))
+          await videoElement.play()
 
-          const videoTrack = videoStream.getVideoTracks()[0]
-          const processor = new MediaStreamTrackProcessor({ track: videoTrack })
-          const reader = processor.readable.getReader()
+          // const videoTrack = videoStream.getVideoTracks()[0]
+          // const processor = new MediaStreamTrackProcessor({ track: videoTrack })
+          // const reader = processor.readable.getReader()
 
-          async function processFrames() {
-            while (true) {
-              const { value: frame, done } = await reader.read()
-              if (done) break
-
-              const receivedAt = Date.now()
-              const width = frame.displayWidth
-              const height = frame.displayHeight
-              const buffer = new Uint8ClampedArray(width * height * 4) // RGBA
-
-              await frame.copyTo(buffer, {
-                layout: [{ offset: 0, stride: width * 4 }],
-                format: 'RGBA',
-              })
-              frame.close()
-
-              const qrResult = jsQR(buffer, width, height)
-              if (qrResult) {
-                const sentAt = new Date(parseInt(qrResult.data)).valueOf()
-                const latency = receivedAt - sentAt
-                set({ latency })
-                console.log(`Latency: ${latency}ms`)
-              }
-            }
-          }
-
-          processFrames()
+          // processFrames(reader, get)
+          trackVideoDisplay(videoElement, get, set)
         }
       }
     } catch (error) {
@@ -206,3 +178,58 @@ export const useListenerStore = create<ListenerState>((set, get) => ({
     set({ iceCandidates: [] })
   },
 }))
+
+async function processFrames(
+  reader: ReadableStreamDefaultReader<VideoFrame>,
+  get: () => ListenerState,
+) {
+  while (true) {
+    const { value: frame, done } = await reader.read()
+    if (done) break
+
+    const width = frame.displayWidth
+    const height = frame.displayHeight
+    const buffer = new Uint8ClampedArray(width * height * 4) // RGBA
+
+    await frame.copyTo(buffer, {
+      layout: [{ offset: 0, stride: width * 4 }],
+      format: 'RGBA',
+    })
+
+    const qrResult = jsQR(buffer, width, height)
+    if (qrResult) {
+      const sentAt = parseInt(qrResult.data)
+      if (!isNaN(sentAt)) {
+        console.log({ frame })
+        get().frameTimestamps.set(frame.timestamp, sentAt)
+      }
+    }
+    frame.close()
+  }
+}
+
+function trackVideoDisplay(
+  video: HTMLVideoElement,
+  get: () => ListenerState,
+  set: (partial: ListenerState | Partial<ListenerState>) => void,
+) {
+  function onFrame(_now: number, metadata: VideoFrameMetadata) {
+    const key = metadata.rtpTimestamp
+    const sentAt = get().frameTimestamps.get(key)
+    console.log({ metadata })
+    if (sentAt !== undefined) {
+      const latency = Date.now() - sentAt
+      set({ latency })
+      console.log(`Display latency for frame ${key}: ${latency}ms`)
+      const res = get().frameTimestamps.delete(key) // Clean up
+      console.log('deleted: ', res, get().frameTimestamps.size)
+    } else {
+      console.log(`No QR timestamp for frame ${key}`)
+    }
+
+    console.log('frames', get().frameTimestamps)
+    video.requestVideoFrameCallback(onFrame)
+  }
+
+  video.requestVideoFrameCallback(onFrame)
+}

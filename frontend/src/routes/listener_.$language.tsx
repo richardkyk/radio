@@ -35,6 +35,7 @@ function RouteComponent() {
   const {
     isActive,
     latency,
+    frameTimestamps,
     start,
     stop,
     toggle,
@@ -56,6 +57,9 @@ function RouteComponent() {
       stop()
     } else if (msg.type === 'participant-count') {
       setParticipantCount(msg.data)
+    } else if (msg.type === 'timestamp') {
+      const [key, value] = msg.data.split(':')
+      frameTimestamps.set(Number(key), Number(value))
     }
   }, [])
 

@@ -1,5 +1,8 @@
 import { create } from 'zustand'
 import { useWebSocketStore } from './web-socket-store'
+import jsQR from 'jsqr'
+
+const MAGIC_BYTES = new Uint8Array([0xde, 0xad, 0xbe, 0xef])
 
 declare global {
   interface RTCRtpSender {
@@ -61,7 +64,41 @@ export const useSpeakerStore = create<SpeakerState>((set, get) => ({
         const videoStream = videoElement.captureStream()
         const videoTrack = videoStream.getVideoTracks()[0]
         const dummyStream = new MediaStream([videoTrack])
-        pc.addTrack(videoTrack, dummyStream)
+
+        const sender = pc.addTrack(videoTrack, dummyStream)
+
+        const { readable, writable } = sender.createEncodedStreams()
+        const transformStream = new TransformStream({
+          async transform(encodedFrame, controller) {
+            console.log(encodedFrame)
+            // const qrResult = jsQR(encodedFrame.data, 84, 84)
+            //
+            let sentAt = BigInt(Date.now())
+            // if (qrResult) {
+            //   const parsed = BigInt(qrResult.data)
+            //   if (!isNaN(Number(parsed))) {
+            //     sentAt = parsed
+            //     console.log(sentAt)
+            //   }
+            // }
+            const meta = new Uint8Array(MAGIC_BYTES.length + 8)
+            meta.set(MAGIC_BYTES, 0)
+            new DataView(meta.buffer).setBigUint64(
+              MAGIC_BYTES.length,
+              sentAt,
+              false,
+            )
+
+            const newData = new Uint8Array(
+              meta.length + encodedFrame.data.byteLength,
+            )
+            newData.set(meta)
+            newData.set(new Uint8Array(encodedFrame.data), meta.length)
+            encodedFrame.data = newData.buffer
+            controller.enqueue(encodedFrame)
+          },
+        })
+        readable.pipeThrough(transformStream).pipeTo(writable)
       }
 
       const offer = await pc.createOffer()
