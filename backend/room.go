@@ -1,6 +1,7 @@
 package room
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +10,13 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v4"
+)
+
+const (
+	MagicPrefix  = "\xDE\xAD\xBE\xEF"
+	MagicLen     = 4
+	HeaderLen    = 4
+	TimestampLen = 8
 )
 
 var (
@@ -409,6 +417,30 @@ func (r *Room) RelayVideoToListeners(remote *webrtc.TrackRemote, participantId P
 			}
 			log.Println("Error reading from remote track:", err)
 			continue
+		}
+
+		payload := packet.Payload
+		magicStart := HeaderLen
+		magicEnd := magicStart + MagicLen
+		if len(payload) > HeaderLen+MagicLen+TimestampLen && string(payload[magicStart:magicEnd]) == MagicPrefix {
+			tsStart := magicEnd
+			tsEnd := tsStart + TimestampLen
+			timestampBytes := payload[tsStart:tsEnd]
+			timestamp := binary.BigEndian.Uint64(timestampBytes)
+
+			fmt.Println("Extracted timestamp:", timestamp)
+
+			// Strip metadata from payload
+			newPayload := make([]byte, 0, len(payload)-MagicLen-TimestampLen)
+			newPayload = append(newPayload, payload[:HeaderLen]...)
+			newPayload = append(newPayload, payload[tsEnd:]...)
+			packet.Payload = newPayload
+
+			data, _ := json.Marshal(fmt.Sprintf("%d:%d", packet.Timestamp, timestamp))
+			r.NotifyParticipants(Signal{
+				Type: "timestamp",
+				Data: data,
+			})
 		}
 
 		for _, t := range r.videoTracks[participantId] {
