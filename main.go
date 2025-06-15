@@ -137,7 +137,7 @@ func handleListenerWS(w http.ResponseWriter, r *http.Request) {
 		}
 
 		switch msg.Type {
-		case "listening-started":
+		case "listener-connected":
 			listener := room.Listener{
 				Participant: &participant,
 			}
@@ -166,7 +166,7 @@ func handleListenerWS(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			participant.Listener.AddIceCandidate(candidate)
-		case "listening-stopped":
+		case "listener-disconnected":
 			chatRoom.RemoveListener(participant.Id)
 			chatRoom.RemoveListenerTracks(participant.Id)
 			chatRoom.GetStats()

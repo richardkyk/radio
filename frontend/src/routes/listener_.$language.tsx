@@ -27,22 +27,18 @@ function RouteComponent() {
 
   const [participantCount, setParticipantCount] = useState(0)
 
-  const audioElementRef = useRef<HTMLAudioElement>(null)
-  const videoElementRef = useRef<HTMLVideoElement>(null)
-
-  const { connect, disconnect, status, setMessageHandler } = useWebSocketStore()
+  const { connect, disconnect, status, setMessageHandler, setOnOpenHandler } =
+    useWebSocketStore()
 
   const {
     isActive,
-    latency,
-    frameTimestamps,
+    speakers,
     start,
     stop,
     toggle,
     acceptOffer,
     addIceCandidate,
-    setAudioElement,
-    setVideoElement,
+    removeSpeaker,
   } = useListenerStore()
 
   const handleMessage = useCallback(async (event: MessageEvent) => {
@@ -51,21 +47,14 @@ function RouteComponent() {
       await acceptOffer(msg.data)
     } else if (msg.type === 'ice') {
       await addIceCandidate(msg.data)
-    } else if (msg.type === 'speaker-connected') {
-      start()
-    } else if (msg.type === 'speaker-disconnected') {
-      stop()
     } else if (msg.type === 'participant-count') {
       setParticipantCount(msg.data)
-    } else if (msg.type === 'timestamp') {
-      const [key, value] = msg.data.split(':')
-      frameTimestamps.set(Number(key), Number(value))
+    } else if (msg.type === 'track-disconnected') {
+      removeSpeaker(msg.data)
     }
   }, [])
 
   useEffect(() => {
-    setAudioElement(audioElementRef.current)
-    setVideoElement(videoElementRef.current)
     document.title = `Listening to ${languageName} Room`
   }, [languageName])
 
@@ -75,8 +64,10 @@ function RouteComponent() {
     )
     connect(wsUrl.toString())
     setMessageHandler(handleMessage)
+    setOnOpenHandler(() => start())
 
     return () => {
+      stop()
       disconnect()
     }
   }, [connect, handleMessage, disconnect, setMessageHandler])
@@ -122,7 +113,6 @@ function RouteComponent() {
                 ></div>
                 {STATUSES.find((s) => s.code === status)?.name}
               </Badge>
-              <div className="text-xs">{latency}ms</div>
             </div>
             <CardDescription>
               Listen to speakers in {languageName}. Audio will be translated in
@@ -161,16 +151,9 @@ function RouteComponent() {
           </CardContent>
         </Card>
 
-        <audio ref={audioElementRef} controls autoPlay className="hidden" />
-
-        <video
-          ref={videoElementRef}
-          autoPlay
-          muted
-          playsInline
-          width="84"
-          height="84"
-        ></video>
+        {speakers.map((speaker) => (
+          <SpeakerAudio key={speaker.id} stream={speaker.stream} />
+        ))}
 
         {participantCount <= 1 && (
           <div className="text-sm text-gray-500 text-center">
@@ -180,4 +163,18 @@ function RouteComponent() {
       </div>
     </main>
   )
+}
+
+function SpeakerAudio({ stream }: { stream: MediaStream }) {
+  const ref = useRef<HTMLAudioElement>(null)
+  const { isActive } = useListenerStore()
+
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.srcObject = stream
+      if (isActive) ref.current.play()
+    }
+  }, [stream, isActive])
+
+  return <audio ref={ref} autoPlay muted={!isActive} controls />
 }

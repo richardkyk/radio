@@ -1,63 +1,57 @@
 import { create } from 'zustand'
 import { useWebSocketStore } from './web-socket-store'
-import jsQR from 'jsqr'
 
-declare class MediaStreamTrackProcessor<
-  T extends MediaStreamTrack = MediaStreamTrack,
-> {
-  constructor(init: { track: T })
-  readonly readable: ReadableStream<VideoFrame>
+type Speaker = {
+  id: string
+  stream: MediaStream
 }
 
 interface ListenerState {
-  audioStream: MediaStream
-  videoStream: MediaStream
-  audioElement: HTMLAudioElement | null
-  videoElement: HTMLVideoElement | null
+  speakers: Speaker[]
   isActive: boolean
   pc: RTCPeerConnection | null
   answerReceived: boolean
   iceCandidates: Array<RTCIceCandidateInit>
-  frameTimestamps: Map<number, number>
-  latency: number
 
-  setAudioElement: (element: HTMLAudioElement | null) => void
-  setVideoElement: (element: HTMLVideoElement | null) => void
+  addSpeaker: (id: string, track: MediaStreamTrack) => void
+  removeSpeaker: (id: string) => void
   start: () => void
   stop: () => void
+  play: () => void
+  pause: () => void
   toggle: () => void
   acceptOffer: (data: RTCSessionDescriptionInit) => Promise<void>
   addIceCandidate: (candidate: RTCIceCandidateInit) => Promise<void>
 }
 
 export const useListenerStore = create<ListenerState>((set, get) => ({
-  audioStream: new MediaStream(),
+  speakers: [],
   videoStream: new MediaStream(),
-  audioElement: null,
-  videoElement: null,
   isActive: false,
   pc: null,
   answerReceived: false,
   iceCandidates: [],
-  latency: 0,
-  frameTimestamps: new Map(),
 
-  setAudioElement: (audioElement: HTMLAudioElement | null) => {
-    if (audioElement) audioElement.srcObject = get().audioStream
-    set({ audioElement })
+  addSpeaker: (id: string, track: MediaStreamTrack) => {
+    const stream = new MediaStream([track])
+    const audio = new Audio()
+    audio.srcObject = stream
+    audio.autoplay = true
+    audio.muted = true
+    const speaker = {
+      id,
+      stream,
+    }
+    set({ speakers: [...get().speakers, speaker] })
   },
-  setVideoElement: (videoElement: HTMLVideoElement | null) => {
-    if (videoElement) videoElement.srcObject = get().videoStream
-    set({ videoElement })
+  removeSpeaker: (id: string) => {
+    const speakers = get().speakers.filter((s) => s.id !== id)
+    set({ speakers })
   },
   start: () => {
-    if (get().isActive) return
-    console.log('listening starting')
-
     const sendMessage = useWebSocketStore.getState().sendMessage
-    set({ isActive: true })
     try {
-      sendMessage({ type: 'listening-started' })
+      sendMessage({ type: 'listener-connected' })
       const pc = new RTCPeerConnection({
         iceServers: [],
       })
@@ -68,82 +62,43 @@ export const useListenerStore = create<ListenerState>((set, get) => ({
         }
       }
       pc.ontrack = async (event) => {
-        const audioElement = get().audioElement
-        if (!audioElement) return
         if (event.track.kind === 'audio') {
           const remoteStream = event.streams[0]
           const streamId = remoteStream.id
-
-          console.log('audioStream', streamId)
-          if (streamId.includes('server')) return
-
-          const audioStream = get().audioStream
-          remoteStream
-            .getTracks()
-            .forEach((track) => audioStream.addTrack(track))
-
-          await audioElement.play()
-        }
-
-        const videoElement = get().videoElement
-        if (!videoElement) return
-        if (event.track.kind === 'video') {
-          const remoteStream = event.streams[0]
-          const streamId = remoteStream.id
-
-          console.log('videoStream', streamId)
-          if (streamId.includes('server')) return
-
-          const videoStream = get().videoStream
-          remoteStream
-            .getTracks()
-            .forEach((track) => videoStream.addTrack(track))
-
-          await videoElement.play()
-
-          // const videoTrack = videoStream.getVideoTracks()[0]
-          // const processor = new MediaStreamTrackProcessor({ track: videoTrack })
-          // const reader = processor.readable.getReader()
-
-          // processFrames(reader, get)
-          trackVideoDisplay(videoElement, get, set)
+          get().addSpeaker(streamId, event.track)
         }
       }
     } catch (error) {
       console.error('Something went wrong:', error)
-      set({ isActive: false })
     }
   },
-
+  play: () => {
+    if (get().isActive) return
+    set({ isActive: true })
+  },
+  pause: () => {
+    if (!get().isActive) return
+    set({ isActive: false })
+  },
   stop: () => {
     if (!get().isActive) return
     console.log('listening stopping')
 
     const sendMessage = useWebSocketStore.getState().sendMessage
-    const audioStream = get().audioStream
-    audioStream.getTracks().forEach((track) => {
-      track.stop()
-      audioStream.removeTrack(track)
-    })
-    const videoStream = get().videoStream
-    videoStream.getTracks().forEach((track) => {
-      track.stop()
-      videoStream.removeTrack(track)
-    })
 
     const pc = get().pc
     if (pc) {
       pc.close()
       set({ pc: null })
     }
-    sendMessage({ type: 'listening-stopped' })
-    set({ isActive: false, answerReceived: false })
+    sendMessage({ type: 'listener-disconnected' })
+    set({ isActive: false, answerReceived: false, speakers: [] })
   },
   toggle: () => {
     if (get().isActive) {
-      get().stop()
+      get().pause()
     } else {
-      get().start()
+      get().play()
     }
   },
   acceptOffer: async (data: RTCSessionDescriptionInit) => {
@@ -178,58 +133,3 @@ export const useListenerStore = create<ListenerState>((set, get) => ({
     set({ iceCandidates: [] })
   },
 }))
-
-async function processFrames(
-  reader: ReadableStreamDefaultReader<VideoFrame>,
-  get: () => ListenerState,
-) {
-  while (true) {
-    const { value: frame, done } = await reader.read()
-    if (done) break
-
-    const width = frame.displayWidth
-    const height = frame.displayHeight
-    const buffer = new Uint8ClampedArray(width * height * 4) // RGBA
-
-    await frame.copyTo(buffer, {
-      layout: [{ offset: 0, stride: width * 4 }],
-      format: 'RGBA',
-    })
-
-    const qrResult = jsQR(buffer, width, height)
-    if (qrResult) {
-      const sentAt = parseInt(qrResult.data)
-      if (!isNaN(sentAt)) {
-        console.log({ frame })
-        get().frameTimestamps.set(frame.timestamp, sentAt)
-      }
-    }
-    frame.close()
-  }
-}
-
-function trackVideoDisplay(
-  video: HTMLVideoElement,
-  get: () => ListenerState,
-  set: (partial: ListenerState | Partial<ListenerState>) => void,
-) {
-  function onFrame(_now: number, metadata: VideoFrameMetadata) {
-    const key = metadata.rtpTimestamp
-    const sentAt = get().frameTimestamps.get(key)
-    console.log({ metadata })
-    if (sentAt !== undefined) {
-      const latency = Date.now() - sentAt
-      set({ latency })
-      console.log(`Display latency for frame ${key}: ${latency}ms`)
-      const res = get().frameTimestamps.delete(key) // Clean up
-      console.log('deleted: ', res, get().frameTimestamps.size)
-    } else {
-      console.log(`No QR timestamp for frame ${key}`)
-    }
-
-    console.log('frames', get().frameTimestamps)
-    video.requestVideoFrameCallback(onFrame)
-  }
-
-  video.requestVideoFrameCallback(onFrame)
-}

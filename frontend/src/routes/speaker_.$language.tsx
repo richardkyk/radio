@@ -15,7 +15,6 @@ import { LANGUAGES, STATUSES } from '@/lib/constants'
 import { useSpeakerStore } from '@/lib/use-speaker-store'
 import { cn } from '@/lib/utils'
 import { useWebSocketStore } from '@/lib/web-socket-store'
-import QRCode from 'qrcode'
 
 export const Route = createFileRoute('/speaker_/$language')({
   component: RouteComponent,
@@ -30,8 +29,7 @@ function RouteComponent() {
 
   const { connect, disconnect, status, setMessageHandler } = useWebSocketStore()
 
-  const { isActive, toggle, acceptOffer, addIceCandidate, setVideoElement } =
-    useSpeakerStore()
+  const { isActive, toggle, acceptOffer, addIceCandidate } = useSpeakerStore()
 
   const handleMessage = useCallback(async (event: MessageEvent) => {
     const msg = JSON.parse(event.data)
@@ -45,6 +43,10 @@ function RouteComponent() {
   }, [])
 
   useEffect(() => {
+    document.title = `Speaking to ${languageName} Room`
+  }, [languageName])
+
+  useEffect(() => {
     const wsUrl = new URL(
       `${import.meta.env.VITE_WS_URL}/speaker?topic=${language}`,
     )
@@ -55,36 +57,6 @@ function RouteComponent() {
       disconnect()
     }
   }, [connect, handleMessage, disconnect, setMessageHandler])
-
-  useEffect(() => {
-    setVideoElement(canvasRef.current)
-    function render() {
-      if (!canvasRef.current) return
-      const canvas = canvasRef.current
-      if (!canvas) return
-      const ctx = canvas.getContext('2d')
-      if (!ctx) return
-      ctx.clearRect(0, 0, canvas.width, canvas.height)
-
-      const timestamp = Date.now().toString()
-      console.log('timestamp', timestamp)
-      QRCode.toCanvas(
-        canvas,
-        timestamp,
-        {
-          errorCorrectionLevel: 'H',
-          margin: 0,
-          scale: 4,
-        },
-        (err) => {
-          if (err) console.error(err)
-          ctx.drawImage(canvas, 0, 0)
-        },
-      )
-    }
-    const id = setInterval(render, 3000)
-    return () => clearInterval(id)
-  }, [languageName])
 
   return (
     <main className="flex min-h-[calc(100vh-2.5rem)] flex-col p-4 bg-gray-50">

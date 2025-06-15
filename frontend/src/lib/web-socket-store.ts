@@ -6,12 +6,15 @@ type MessageHandler = (event: MessageEvent, ws: WebSocket) => void
 interface WebSocketState {
   status: 'idle' | 'online' | 'offline'
   ws: WebSocket | null
+  wsUrl: string | null
+  messageHandler: MessageHandler | null
+  onOpenHandler: () => void
+
   connect: (url: string) => void
   disconnect: () => void
   sendMessage: (data: any) => void
   setMessageHandler: (handler: MessageHandler) => void
-  wsUrl: string | null
-  messageHandler: MessageHandler | null
+  setOnOpenHandler: (handler: () => void) => void
 }
 
 export const useWebSocketStore = create<WebSocketState>((set, get) => ({
@@ -19,6 +22,7 @@ export const useWebSocketStore = create<WebSocketState>((set, get) => ({
   ws: null,
   wsUrl: null,
   messageHandler: null,
+  onOpenHandler: () => {},
 
   connect: (url: string) => {
     if (get().ws) return
@@ -28,6 +32,7 @@ export const useWebSocketStore = create<WebSocketState>((set, get) => ({
     ws.onopen = () => {
       set({ status: 'online', ws, wsUrl: url })
       ws.send(JSON.stringify({ type: `participant-connected` }))
+      get().onOpenHandler()
     }
 
     ws.onmessage = (event) => {
@@ -69,5 +74,9 @@ export const useWebSocketStore = create<WebSocketState>((set, get) => ({
 
   setMessageHandler: (handler: MessageHandler) => {
     set({ messageHandler: handler })
+  },
+
+  setOnOpenHandler: (handler: () => void) => {
+    set({ onOpenHandler: handler })
   },
 }))
